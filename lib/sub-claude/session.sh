@@ -1605,7 +1605,7 @@ _run_find_command() {
   local dir
   while IFS= read -r dir; do
     local script="$dir/${name}.sh"
-    if [[ -f "$script" ]]; then
+    if [[ -f "$script" && -x "$script" ]]; then
       printf '%s\n' "$script"
       return 0
     fi
@@ -1614,7 +1614,9 @@ _run_find_command() {
 }
 
 _run_list_commands() {
-  local found=0
+  # Two-pass: collect entries first to calculate column width, then print
+  local entries=()
+  local max_name_len=0
   local dir
   while IFS= read -r dir; do
     if [[ -d "$dir" ]]; then
@@ -1626,39 +1628,55 @@ _run_list_commands() {
       fi
       local script
       for script in "$dir"/*.sh; do
-        [[ -f "$script" ]] || continue
+        [[ -f "$script" && -x "$script" ]] || continue
         local name desc
         name=$(basename "$script" .sh)
-        # Extract description from first comment line matching "# Description: ..."
         desc=$(sed -n 's/^# *[Dd]escription: *//p' "$script" | head -1)
-        if [[ -n "$desc" ]]; then
-          printf '  %-20s (%s) %s\n' "$name" "$label" "$desc"
-        else
-          printf '  %-20s (%s)\n' "$name" "$label"
-        fi
-        found=1
+        entries+=("${name}	${label}	${desc}")
+        (( ${#name} > max_name_len )) && max_name_len=${#name}
       done
     fi
   done < <(_run_commands_dirs)
 
-  if [[ "$found" -eq 0 ]]; then
+  if [[ ${#entries[@]} -eq 0 ]]; then
     printf 'No commands found.\n' >&2
     printf 'Create scripts in ~/.sub-claude/commands/ or .sub-claude/commands/\n' >&2
     printf 'See: sub-claude help run\n' >&2
     return 1
   fi
+
+  local width=$(( max_name_len + 2 ))
+  (( width < 20 )) && width=20
+  local entry
+  for entry in "${entries[@]}"; do
+    local name label desc
+    IFS=$'\t' read -r name label desc <<< "$entry"
+    if [[ -n "$desc" ]]; then
+      printf "  %-${width}s (%s) %s\n" "$name" "$label" "$desc"
+    else
+      printf "  %-${width}s (%s)\n" "$name" "$label"
+    fi
+  done
 }
 
 cmd_run() {
+  # Handle -- to stop flag parsing
+  local _stop_flags=0
+  if [[ "${1:-}" == "--" ]]; then
+    _stop_flags=1
+    shift
+  fi
+
   local name="${1:-}"
 
-  case "$name" in
-    --list|-l)
-      _run_list_commands
-      return
-      ;;
-    --help|-h|'')
-      cat <<'USAGE'
+  if [[ "$_stop_flags" -eq 0 ]]; then
+    case "$name" in
+      --list|-l)
+        _run_list_commands
+        return
+        ;;
+      --help|-h|'')
+        cat <<'USAGE'
 Usage: sub-claude run <command> [args...]
 
 Run a custom command script.
@@ -1681,23 +1699,23 @@ Creating commands:
 USAGE
       return
       ;;
-  esac
+    esac
+  fi
 
   shift
 
-  # Validate command name: only allow safe characters (no path traversal)
-  if [[ ! "$name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-    die "invalid command name '$name' — use only letters, digits, hyphens, underscores"
+  # Validate command name: must start with letter/digit (no leading hyphens that
+  # could collide with flags), followed by letters, digits, hyphens, underscores.
+  if [[ -z "$name" ]]; then
+    die "missing command name — run 'sub-claude run --help' for usage"
+  fi
+  if [[ ! "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
+    die "invalid command name '$name' — must start with a letter or digit, then letters, digits, hyphens, underscores"
   fi
 
   local script
   if ! script=$(_run_find_command "$name"); then
     die "unknown command '$name' — run 'sub-claude run --list' to see available commands"
-  fi
-
-  if [[ ! -x "$script" ]]; then
-    printf 'hint: chmod +x %s\n' "$script" >&2
-    die "command script is not executable: $script"
   fi
 
   exec "$script" "$@"

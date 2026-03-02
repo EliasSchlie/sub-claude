@@ -173,4 +173,4 @@ Running `sub-claude run review` executes the project-local one.
   sub-claude -v response start "Review this diff (in $tmp):\n\nSee the file at $tmp" --block
   rm "$tmp"
   ```
-- **Command names** must match `[a-zA-Z0-9_-]+` — no dots, slashes, or spaces.
+- **Command names** must start with a letter or digit, followed by letters, digits, hyphens, or underscores (`[a-zA-Z0-9][a-zA-Z0-9_-]*`). No dots, slashes, spaces, or leading hyphens.

@@ -25,6 +25,7 @@ teardown() { _common_teardown; }
 
 @test "_run_find_command resolves project-local command" {
   echo '#!/usr/bin/env bash' > "$TEST_DIR/.sub-claude/commands/review.sh"
+  chmod +x "$TEST_DIR/.sub-claude/commands/review.sh"
   local script
   script=$(_run_find_command "review")
   [[ "$script" == *".sub-claude/commands/review.sh" ]]
@@ -32,6 +33,7 @@ teardown() { _common_teardown; }
 
 @test "_run_find_command resolves global command" {
   echo '#!/usr/bin/env bash' > "$HOME/.sub-claude/commands/review.sh"
+  chmod +x "$HOME/.sub-claude/commands/review.sh"
   local script
   script=$(_run_find_command "review")
   [[ "$script" == *"global-home/.sub-claude/commands/review.sh" ]]
@@ -39,15 +41,35 @@ teardown() { _common_teardown; }
 
 @test "_run_find_command prefers project-local over global" {
   echo '#!/usr/bin/env bash' > "$TEST_DIR/.sub-claude/commands/review.sh"
+  chmod +x "$TEST_DIR/.sub-claude/commands/review.sh"
   echo '#!/usr/bin/env bash' > "$HOME/.sub-claude/commands/review.sh"
+  chmod +x "$HOME/.sub-claude/commands/review.sh"
   local script
   script=$(_run_find_command "review")
   # Should resolve to project-local, not global
   [[ "$script" == "$TEST_DIR/.sub-claude/commands/review.sh" ]]
 }
 
+@test "_run_find_command skips non-executable and falls through to global" {
+  echo '#!/usr/bin/env bash' > "$TEST_DIR/.sub-claude/commands/review.sh"
+  # project-local: NOT executable
+  echo '#!/usr/bin/env bash' > "$HOME/.sub-claude/commands/review.sh"
+  chmod +x "$HOME/.sub-claude/commands/review.sh"
+  local script
+  script=$(_run_find_command "review")
+  [[ "$script" == *"global-home/.sub-claude/commands/review.sh" ]]
+}
+
 @test "_run_find_command returns 1 for nonexistent command" {
   run _run_find_command "nonexistent"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
+@test "_run_find_command returns 1 for non-executable command" {
+  echo '#!/usr/bin/env bash' > "$HOME/.sub-claude/commands/noexec.sh"
+  # NOT chmod +x
+  run _run_find_command "noexec"
   [ "$status" -eq 1 ]
   [ -z "$output" ]
 }
@@ -62,6 +84,7 @@ teardown() { _common_teardown; }
 # Description: Review staged git changes
 echo "review"
 EOF
+  chmod +x "$HOME/.sub-claude/commands/review.sh"
   run _run_list_commands
   [ "$status" -eq 0 ]
   [[ "$output" == *"review"* ]]
@@ -74,6 +97,7 @@ EOF
 #!/usr/bin/env bash
 echo "simple"
 EOF
+  chmod +x "$HOME/.sub-claude/commands/simple.sh"
   run _run_list_commands
   [ "$status" -eq 0 ]
   [[ "$output" == *"simple"* ]]
@@ -86,6 +110,7 @@ EOF
 # Description: Deploy the app
 echo "deploy"
 EOF
+  chmod +x "$TEST_DIR/.sub-claude/commands/deploy.sh"
   run _run_list_commands
   [ "$status" -eq 0 ]
   [[ "$output" == *"deploy"* ]]
@@ -94,7 +119,9 @@ EOF
 
 @test "_run_list_commands shows both project and global commands" {
   echo '#!/usr/bin/env bash' > "$TEST_DIR/.sub-claude/commands/local-cmd.sh"
+  chmod +x "$TEST_DIR/.sub-claude/commands/local-cmd.sh"
   echo '#!/usr/bin/env bash' > "$HOME/.sub-claude/commands/global-cmd.sh"
+  chmod +x "$HOME/.sub-claude/commands/global-cmd.sh"
   run _run_list_commands
   [ "$status" -eq 0 ]
   [[ "$output" == *"local-cmd"* ]]
@@ -112,12 +139,64 @@ EOF
   [[ "$output" == *"No commands found"* ]]
 }
 
+@test "_run_list_commands skips non-executable scripts" {
+  cat > "$HOME/.sub-claude/commands/noexec.sh" << 'EOF'
+#!/usr/bin/env bash
+# Description: Should not appear
+echo "hidden"
+EOF
+  # Intentionally NOT chmod +x
+  cat > "$HOME/.sub-claude/commands/good.sh" << 'EOF'
+#!/usr/bin/env bash
+# Description: Visible command
+echo "visible"
+EOF
+  chmod +x "$HOME/.sub-claude/commands/good.sh"
+  run _run_list_commands
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"good"* ]]
+  [[ "$output" != *"noexec"* ]]
+}
+
+@test "_run_list_commands returns 1 when only non-executable scripts exist" {
+  cat > "$HOME/.sub-claude/commands/noexec.sh" << 'EOF'
+#!/usr/bin/env bash
+echo "hidden"
+EOF
+  # Not executable — should be skipped, leaving no commands
+  rmdir "$TEST_DIR/.sub-claude/commands"
+  run _run_list_commands
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"No commands found"* ]]
+}
+
+@test "_run_list_commands aligns columns with long command names" {
+  cat > "$HOME/.sub-claude/commands/short.sh" << 'EOF'
+#!/usr/bin/env bash
+# Description: Short one
+EOF
+  chmod +x "$HOME/.sub-claude/commands/short.sh"
+  cat > "$HOME/.sub-claude/commands/this-is-a-very-long-command-name.sh" << 'EOF'
+#!/usr/bin/env bash
+# Description: Long one
+EOF
+  chmod +x "$HOME/.sub-claude/commands/this-is-a-very-long-command-name.sh"
+  run _run_list_commands
+  [ "$status" -eq 0 ]
+  # Both "(global)" labels should start at the same absolute column
+  local col_short col_long
+  col_short=$(echo "$output" | grep "^  short " | grep -bo '(global)' | head -1 | cut -d: -f1)
+  col_long=$(echo "$output" | grep "^  this-is-a-very-long-command-name " | grep -bo '(global)' | head -1 | cut -d: -f1)
+  [ "$col_short" -eq "$col_long" ]
+}
+
 @test "_run_list_commands extracts description case-insensitively" {
   cat > "$HOME/.sub-claude/commands/test.sh" << 'EOF'
 #!/usr/bin/env bash
 # description: lowercase description header
 echo "test"
 EOF
+  chmod +x "$HOME/.sub-claude/commands/test.sh"
   run _run_list_commands
   [ "$status" -eq 0 ]
   [[ "$output" == *"lowercase description header"* ]]
@@ -145,6 +224,25 @@ EOF
   [[ "$output" == *"invalid command name"* ]]
 }
 
+@test "cmd_run rejects names starting with hyphen" {
+  echo '#!/usr/bin/env bash' > "$HOME/.sub-claude/commands/-sneaky.sh"
+  chmod +x "$HOME/.sub-claude/commands/-sneaky.sh"
+  run cmd_run -- "-sneaky"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"invalid command name"* ]]
+}
+
+@test "cmd_run -- stops flag parsing and passes name" {
+  cat > "$HOME/.sub-claude/commands/mytest.sh" << 'EOF'
+#!/usr/bin/env bash
+echo "ran"
+EOF
+  chmod +x "$HOME/.sub-claude/commands/mytest.sh"
+  run cmd_run -- "mytest"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "ran" ]]
+}
+
 @test "cmd_run accepts alphanumeric names with hyphens and underscores" {
   cat > "$HOME/.sub-claude/commands/my-cmd_123.sh" << 'EOF'
 #!/usr/bin/env bash
@@ -168,16 +266,15 @@ EOF
   [[ "$output" == *"sub-claude run --list"* ]]
 }
 
-@test "cmd_run dies for non-executable script" {
+@test "cmd_run treats non-executable script as unknown" {
   cat > "$HOME/.sub-claude/commands/noexec.sh" << 'EOF'
 #!/usr/bin/env bash
 echo "should not run"
 EOF
-  # Intentionally NOT chmod +x
+  # Intentionally NOT chmod +x — _run_find_command skips it
   run cmd_run "noexec"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"not executable"* ]]
-  [[ "$output" == *"chmod +x"* ]]
+  [[ "$output" == *"unknown command"* ]]
 }
 
 # ---------------------------------------------------------------------------
@@ -204,6 +301,7 @@ EOF
 
 @test "cmd_run --list delegates to _run_list_commands" {
   echo '#!/usr/bin/env bash' > "$HOME/.sub-claude/commands/test.sh"
+  chmod +x "$HOME/.sub-claude/commands/test.sh"
   run cmd_run --list
   [ "$status" -eq 0 ]
   [[ "$output" == *"test"* ]]
@@ -211,6 +309,7 @@ EOF
 
 @test "cmd_run -l is shorthand for --list" {
   echo '#!/usr/bin/env bash' > "$HOME/.sub-claude/commands/test.sh"
+  chmod +x "$HOME/.sub-claude/commands/test.sh"
   run cmd_run -l
   [ "$status" -eq 0 ]
   [[ "$output" == *"test"* ]]

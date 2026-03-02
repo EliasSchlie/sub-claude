@@ -33,6 +33,15 @@ teardown() { _common_teardown; }
   [[ "$output" == *"non-negative integer"* ]]
 }
 
+@test "cmd_wait rejects empty --timeout" {
+  echo '{"version":1,"pool_size":1,"queue_seq":0,"slots":[],"pins":{}}' \
+    > "$POOL_DIR/pool.json"
+
+  run cmd_wait --timeout ""
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"non-negative integer"* ]]
+}
+
 @test "cmd_start rejects non-numeric --timeout" {
   echo '{"version":1,"pool_size":1,"queue_seq":0,"slots":[],"pins":{}}' \
     > "$POOL_DIR/pool.json"

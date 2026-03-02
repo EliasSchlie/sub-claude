@@ -910,7 +910,7 @@ cmd_wait() {
 
   # Validate timeout
   case "$timeout" in
-    *[!0-9]*) die "wait: --timeout must be a non-negative integer (got '$timeout')" ;;
+    ''|*[!0-9]*) die "wait: --timeout must be a non-negative integer (got '$timeout')" ;;
   esac
 
   # Export terminal flag so delegated cmd_result inherits it.

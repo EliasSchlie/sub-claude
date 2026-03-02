@@ -1557,3 +1557,126 @@ cmd_uuid() {
 
   printf 'claude-uuid: %s | slot: %s | status: %s\n' "$claude_uuid" "$slot_info" "$status"
 }
+
+# ---------------------------------------------------------------------------
+# cmd_run "$@" — run a custom command script
+# ---------------------------------------------------------------------------
+# Looks up command scripts in two locations (project-local first):
+#   1. .sub-claude/commands/<name>.sh  (project-local, git root or $PWD)
+#   2. ~/.sub-claude/commands/<name>.sh (global)
+#
+# Special flags:
+#   --list    List all available commands
+#   --help    Show usage for cmd_run
+
+_run_commands_dirs() {
+  local project_dir
+  project_dir=$(get_project_dir)
+  # Project-local first (higher priority)
+  printf '%s/.sub-claude/commands\n' "$project_dir"
+  # Global fallback
+  printf '%s/.sub-claude/commands\n' "$HOME"
+}
+
+_run_find_command() {
+  local name="$1"
+  local dir
+  while IFS= read -r dir; do
+    local script="$dir/${name}.sh"
+    if [[ -f "$script" ]]; then
+      printf '%s\n' "$script"
+      return 0
+    fi
+  done < <(_run_commands_dirs)
+  return 1
+}
+
+_run_list_commands() {
+  local found=0
+  local dir
+  while IFS= read -r dir; do
+    if [[ -d "$dir" ]]; then
+      local label
+      if [[ "$dir" == "$HOME/.sub-claude/commands" ]]; then
+        label="global"
+      else
+        label="project"
+      fi
+      local script
+      for script in "$dir"/*.sh; do
+        [[ -f "$script" ]] || continue
+        local name desc
+        name=$(basename "$script" .sh)
+        # Extract description from first comment line matching "# Description: ..."
+        desc=$(sed -n 's/^# *[Dd]escription: *//p' "$script" | head -1)
+        if [[ -n "$desc" ]]; then
+          printf '  %-20s (%s) %s\n' "$name" "$label" "$desc"
+        else
+          printf '  %-20s (%s)\n' "$name" "$label"
+        fi
+        found=1
+      done
+    fi
+  done < <(_run_commands_dirs)
+
+  if [[ "$found" -eq 0 ]]; then
+    printf 'No commands found.\n' >&2
+    printf 'Create scripts in ~/.sub-claude/commands/ or .sub-claude/commands/\n' >&2
+    printf 'See: sub-claude help run\n' >&2
+    return 1
+  fi
+}
+
+cmd_run() {
+  local name="${1:-}"
+
+  case "$name" in
+    --list|-l)
+      _run_list_commands
+      return
+      ;;
+    --help|-h|'')
+      cat <<'USAGE'
+Usage: sub-claude run <command> [args...]
+
+Run a custom command script.
+
+Commands are looked up in order:
+  1. .sub-claude/commands/<name>.sh  (project-local)
+  2. ~/.sub-claude/commands/<name>.sh (global)
+
+Options:
+  --list, -l    List available commands
+  --help, -h    Show this help
+
+Creating commands:
+  See docs/custom-commands.md or run a command like:
+
+    #!/usr/bin/env bash
+    # Description: Review staged git changes
+    diff=$(git diff --cached)
+    sub-claude -v response start "Review this diff:\n$diff" --block
+USAGE
+      return
+      ;;
+  esac
+
+  shift
+
+  # Validate command name: only allow safe characters (no path traversal)
+  if [[ ! "$name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    die "invalid command name '$name' — use only letters, digits, hyphens, underscores"
+  fi
+
+  local script
+  if ! script=$(_run_find_command "$name"); then
+    die "unknown command '$name' — run 'sub-claude run --list' to see available commands"
+  fi
+
+  if [[ ! -x "$script" ]]; then
+    printf 'hint: chmod +x %s\n' "$script" >&2
+    die "command script is not executable: $script"
+  fi
+
+  exec "$script" "$@"
+}

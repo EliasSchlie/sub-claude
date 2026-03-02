@@ -67,6 +67,10 @@ sub-claude pool list                    # list all pools across projects
 sub-claude pool destroy <hash> | --all  # tear down a specific or all pools
 sub-claude pool migrate                 # clean up old claude-pool artifacts
 
+# Custom commands (see docs/custom-commands.md)
+sub-claude run <command> [args...]      # run a custom command script
+sub-claude run --list                   # list available commands
+
 # Debug
 sub-claude attach <id>                  # attach to tmux pane (live view)
 sub-claude uuid <id>                    # print Claude UUID, slot, status

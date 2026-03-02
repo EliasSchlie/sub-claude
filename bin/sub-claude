@@ -74,6 +74,10 @@ Pool management:
   pool gc                         Clean up stale pool directories
   pool migrate                    Clean up old claude-pool artifacts
 
+Custom commands:
+  run <command> [args...]         Run a custom command script
+  run --list                      List available commands
+
 Debug:
   attach <id>                     Attach to tmux pane
   uuid <id>                       Show Claude UUID + slot info
@@ -121,6 +125,7 @@ case "$cmd" in
   stop)     cmd_stop "$@" ;;
   cancel)   cmd_cancel "$@" ;;
   clean)    cmd_clean "$@" ;;
+  run)      cmd_run "$@" ;;
   attach)   cmd_attach "$@" ;;
   uuid)     cmd_uuid "$@" ;;
   pool)

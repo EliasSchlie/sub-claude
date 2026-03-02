@@ -133,6 +133,9 @@ sub-claude pool init [--size N]               # start pool (default: 5)
 sub-claude pool stop                          # kill pool + tmux server
 sub-claude pool status                        # show slots, sessions, queue
 sub-claude pool resize N                      # add or remove slots dynamically
+sub-claude pool list                          # list all pools across projects
+sub-claude pool destroy <hash> | --all        # tear down a specific or all pools
+sub-claude pool migrate                       # clean up old claude-pool artifacts
 ```
 
 > ⚠️ **`--tree` and `--all`** affect sessions from ALL Claude instances in this directory.

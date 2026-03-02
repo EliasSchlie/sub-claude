@@ -63,6 +63,9 @@ sub-claude pool init [--size N]         # start pool (default: 5 slots)
 sub-claude pool stop                    # kill pool + tmux server
 sub-claude pool status                  # show slots, sessions, queue
 sub-claude pool resize N                # add or remove slots
+sub-claude pool list                    # list all pools across projects
+sub-claude pool destroy <hash> | --all  # tear down a specific or all pools
+sub-claude pool migrate                 # clean up old claude-pool artifacts
 
 # Debug
 sub-claude attach <id>                  # attach to tmux pane (live view)

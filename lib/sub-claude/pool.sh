@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+# shellcheck disable=SC2153
 # pool.sh — pool lifecycle management and background watcher
 #
 # Sourced after core.sh and tmux.sh. Relies on:
@@ -14,6 +15,9 @@
 # ---------------------------------------------------------------------------
 
 pool_init() {
+  # Check for old claude-pool artifacts (#11)
+  _check_old_claude_pool
+
   local pool_size=5
 
   while [ $# -gt 0 ]; do
@@ -677,5 +681,200 @@ _watcher_recover_crashed_slots() {
 
   if [ "$count" -gt 0 ]; then
     pool_log "watcher" "crash recovery: restarted $count slots"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# pool_list (#10)
+# ---------------------------------------------------------------------------
+
+pool_list() {
+  local found=0
+
+  if [ ! -d "$SUB_CLAUDE_STATE_DIR" ]; then
+    printf 'no pools found\n'
+    return 0
+  fi
+
+  for pool_json_file in "$SUB_CLAUDE_STATE_DIR"/*/pool.json; do
+    [ -f "$pool_json_file" ] || break
+
+    local pool_path hash project_dir pool_size tmux_socket watcher_state
+    pool_path="$(dirname "$pool_json_file")"
+    hash="$(basename "$pool_path")"
+
+    project_dir=$(jq -r '.project_dir // "unknown"' "$pool_json_file" 2>/dev/null)
+    pool_size=$(jq -r '.pool_size // 0' "$pool_json_file" 2>/dev/null)
+    tmux_socket=$(jq -r '.tmux_socket // ""' "$pool_json_file" 2>/dev/null)
+
+    # Check watcher status
+    watcher_state="stopped"
+    local watcher_pid_file="$pool_path/watcher.pid"
+    if [ -f "$watcher_pid_file" ]; then
+      local watcher_pid
+      watcher_pid=$(cat "$watcher_pid_file" 2>/dev/null)
+      if [ -n "$watcher_pid" ] && kill -0 "$watcher_pid" 2>/dev/null; then
+        watcher_state="running"
+      fi
+    fi
+
+    if [ "$found" -eq 0 ]; then
+      printf '%-10s  %-6s  %-8s  %s\n' "HASH" "SLOTS" "WATCHER" "PROJECT"
+    fi
+    printf '%-10s  %-6s  %-8s  %s\n' "$hash" "$pool_size" "$watcher_state" "$project_dir"
+    found=$(( found + 1 ))
+  done
+
+  if [ "$found" -eq 0 ]; then
+    printf 'no pools found\n'
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# pool_destroy (#10)
+# ---------------------------------------------------------------------------
+
+pool_destroy() {
+  local target="${1:-}"
+
+  if [ -z "$target" ]; then
+    die "usage: sub-claude pool destroy <hash> | --all"
+  fi
+
+  if [ "$target" = "--all" ]; then
+    _pool_destroy_all
+    return $?
+  fi
+
+  _pool_destroy_one "$target"
+}
+
+_pool_destroy_one() {
+  local hash="$1"
+  # Validate hash — only hex characters, no path separators
+  case "$hash" in
+    *[!0-9a-f]*|'') die "invalid pool hash: '$hash'" ;;
+  esac
+  local pool_path="$SUB_CLAUDE_STATE_DIR/$hash"
+
+  if [ ! -d "$pool_path" ] || [ ! -f "$pool_path/pool.json" ]; then
+    die "no pool found with hash '$hash'"
+  fi
+
+  local tmux_socket
+  tmux_socket=$(jq -r '.tmux_socket // ""' "$pool_path/pool.json" 2>/dev/null)
+
+  # Kill watcher
+  local watcher_pid_file="$pool_path/watcher.pid"
+  if [ -f "$watcher_pid_file" ]; then
+    local watcher_pid
+    watcher_pid=$(cat "$watcher_pid_file" 2>/dev/null || true)
+    if [ -n "$watcher_pid" ] && kill -0 "$watcher_pid" 2>/dev/null; then
+      kill "$watcher_pid" 2>/dev/null || true
+    fi
+  fi
+
+  # Kill tmux server
+  if [ -n "$tmux_socket" ]; then
+    tmux -L "$tmux_socket" kill-server 2>/dev/null || true
+  fi
+
+  # Safety: refuse to rm -rf anything that isn't a non-empty absolute path
+  # with at least 3 components (e.g. /a/b/c).
+  case "$pool_path" in
+    /*/*/?*) ;;
+    *) die "refusing to remove unexpected pool path: $pool_path" ;;
+  esac
+  rm -rf "$pool_path"
+
+  printf 'pool %s destroyed\n' "$hash"
+}
+
+_pool_destroy_all() {
+  if [ ! -d "$SUB_CLAUDE_STATE_DIR" ]; then
+    printf 'no pools to destroy\n'
+    return 0
+  fi
+
+  local count=0
+  for pool_json_file in "$SUB_CLAUDE_STATE_DIR"/*/pool.json; do
+    [ -f "$pool_json_file" ] || break
+    local pool_path hash
+    pool_path="$(dirname "$pool_json_file")"
+    hash="$(basename "$pool_path")"
+    _pool_destroy_one "$hash"
+    count=$(( count + 1 ))
+  done
+
+  if [ "$count" -eq 0 ]; then
+    printf 'no pools to destroy\n'
+  else
+    printf '%d pool(s) destroyed\n' "$count"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# _check_old_claude_pool (#11 — migration warning)
+# ---------------------------------------------------------------------------
+
+_check_old_claude_pool() {
+  if [ -d "$HOME/.claude-pool" ]; then
+    warn "found old claude-pool data at ~/.claude-pool/ — run 'sub-claude pool migrate' to clean up"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# pool_migrate (#11)
+# ---------------------------------------------------------------------------
+
+pool_migrate() {
+  local cleaned=0
+
+  # Kill any running claude-pool tmux servers
+  local old_sockets
+  old_sockets=$(tmux list-servers -F '#{socket_path}' 2>/dev/null | grep 'claude-pool-' || true)
+  if [ -n "$old_sockets" ]; then
+    while IFS= read -r sock; do
+      local sock_name
+      sock_name=$(basename "$sock")
+      tmux -L "$sock_name" kill-server 2>/dev/null || true
+      cleaned=$(( cleaned + 1 ))
+    done <<< "$old_sockets"
+  fi
+
+  # Kill old claude-pool watcher processes
+  # Use [c] bracket trick to prevent pgrep from matching its own command line
+  local old_pids
+  old_pids=$(pgrep -f '[c]laude-pool' 2>/dev/null | grep -v "^$$\$" || true)
+  if [ -n "$old_pids" ]; then
+    while IFS= read -r pid; do
+      kill "$pid" 2>/dev/null || true
+      cleaned=$(( cleaned + 1 ))
+    done <<< "$old_pids"
+  fi
+
+  # Remove old data directory
+  local old_data="$HOME/.claude-pool"
+  if [ -d "$old_data" ]; then
+    case "$old_data" in
+      /*/*/?*) ;;
+      *) die "refusing to remove unexpected path: $old_data" ;;
+    esac
+    rm -rf "$old_data"
+    printf 'removed %s\n' "$old_data"
+    cleaned=$(( cleaned + 1 ))
+  fi
+
+  # Remove old binary
+  if [ -f "$HOME/.local/bin/claude-pool" ]; then
+    rm -f "$HOME/.local/bin/claude-pool"
+    printf 'removed %s\n' "$HOME/.local/bin/claude-pool"
+    cleaned=$(( cleaned + 1 ))
+  fi
+
+  if [ "$cleaned" -eq 0 ]; then
+    printf 'nothing to clean up — already migrated\n'
+  else
+    printf 'migration complete: cleaned %d item(s)\n' "$cleaned"
   fi
 }

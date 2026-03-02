@@ -21,6 +21,7 @@ pool_init() {
   local pool_size="$SUB_CLAUDE_DEFAULT_POOL_SIZE"
   local idle_timeout=1800  # 30 minutes default
   local ttl=7200           # 2 hours default
+  local pressure_threshold=0  # 0 = auto ((pool_size+1)/2)
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -34,6 +35,10 @@ pool_init() {
         ;;
       --ttl)
         ttl="$2"
+        shift 2
+        ;;
+      --pressure-threshold)
+        pressure_threshold="$2"
         shift 2
         ;;
       *)
@@ -55,6 +60,11 @@ pool_init() {
   # Validate ttl (non-negative integer)
   case "$ttl" in
     ''|*[!0-9]*) die "pool init: ttl must be a non-negative integer (got '$ttl')" ;;
+  esac
+
+  # Validate pressure_threshold (non-negative integer)
+  case "$pressure_threshold" in
+    ''|*[!0-9]*) die "pool init: pressure-threshold must be a non-negative integer (got '$pressure_threshold')" ;;
   esac
 
   # Check for existing pool
@@ -91,7 +101,8 @@ pool_init() {
     --arg created_at "$now" \
     --argjson idle_timeout "$idle_timeout" \
     --argjson ttl "$ttl" \
-    --arg last_dispatch_at "$now" \
+    --argjson pressure_threshold "$pressure_threshold" \
+    --arg last_activity_at "$now" \
     --argjson slots "$slots_json" \
     '{
       version: 1,
@@ -101,7 +112,8 @@ pool_init() {
       created_at: $created_at,
       idle_timeout: $idle_timeout,
       ttl: $ttl,
-      last_dispatch_at: $last_dispatch_at,
+      pressure_threshold: $pressure_threshold,
+      last_activity_at: $last_activity_at,
       queue_seq: 0,
       slots: $slots,
       pins: {}
@@ -533,25 +545,34 @@ _watcher_reap_idle_slots() {
   done
 }
 
-# _watcher_check_ttl — auto-shutdown pool if no dispatches for > ttl seconds.
+# _watcher_check_ttl — auto-shutdown pool if no activity for > ttl seconds.
+# Skips shutdown if any slot is busy (prevents killing running jobs).
 _watcher_check_ttl() {
-  local pool_json ttl last_dispatch
+  local pool_json ttl last_activity
   pool_json=$(read_pool_json)
   ttl=$(printf '%s' "$pool_json" | jq -r '.ttl // 0')
 
   # ttl=0 means no auto-shutdown
   [ "$ttl" -gt 0 ] 2>/dev/null || return 0
 
-  last_dispatch=$(printf '%s' "$pool_json" | jq -r '.last_dispatch_at // empty')
-  [ -n "$last_dispatch" ] || return 0
+  # Never auto-stop while jobs are running
+  local busy_count
+  busy_count=$(printf '%s' "$pool_json" | jq '[.slots[] | select(.status == "busy")] | length')
+  if [ "$busy_count" -gt 0 ]; then
+    return 0
+  fi
+
+  # Check last_activity_at (falls back to last_dispatch_at for pre-upgrade pools)
+  last_activity=$(printf '%s' "$pool_json" | jq -r '.last_activity_at // .last_dispatch_at // empty')
+  [ -n "$last_activity" ] || return 0
 
   local last_epoch now_epoch age
   now_epoch=$(date +%s)
-  last_epoch=$(_iso_to_epoch "$last_dispatch")
+  last_epoch=$(_iso_to_epoch "$last_activity")
   age=$(( now_epoch - last_epoch ))
 
   if [ "$age" -ge "$ttl" ]; then
-    pool_log "watcher" "TTL expired (${age}s >= ${ttl}s), auto-stopping pool"
+    pool_log "watcher" "TTL expired (${age}s >= ${ttl}s, no busy slots), auto-stopping pool"
     pool_stop
     exit 0
   fi
@@ -628,6 +649,9 @@ _watcher_phase1() {
           # race where the watcher consumes the signal before wait_for_done
           # sees it, forcing a 30s idle fallback. The done file is cleared
           # by _locked_claim_and_dispatch (under the lock) before each new prompt.
+
+          # Update last_activity_at so TTL tracks completion, not just dispatch.
+          pool_json=$(printf '%s' "$pool_json" | jq --arg ts "$now" '.last_activity_at = $ts')
           pool_log "watcher" "slot-$i: done file detected, busy -> idle"
 
         # Check pane liveness from pre-collected map
@@ -642,6 +666,8 @@ _watcher_phase1() {
             printf '%s' "$meta_tmp" > "$POOL_DIR/jobs/$slot_job_id/meta.json.tmp"
             mv "$POOL_DIR/jobs/$slot_job_id/meta.json.tmp" "$POOL_DIR/jobs/$slot_job_id/meta.json"
           fi
+          # Update last_activity_at so crash doesn't leave TTL stale at dispatch time.
+          pool_json=$(printf '%s' "$pool_json" | jq --arg ts "$now" '.last_activity_at = $ts')
           pool_log "watcher" "slot-$i: pane dead, marking error"
           error_count=$(( error_count + 1 ))
         fi

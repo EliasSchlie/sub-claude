@@ -131,23 +131,32 @@ queue_length() {
 # ---------------------------------------------------------------------------
 # queue_pressure
 # ---------------------------------------------------------------------------
-# Returns 0 (pressure detected) if queue length >= pool_size / 2.
+# Returns 0 (pressure detected) if queue length >= threshold.
 # Returns 1 if pressure is not detected.
 # Prints a warning message to stderr when under pressure.
+#
+# Threshold is configurable via pool.json's pressure_threshold field
+# (set at pool init with --pressure-threshold N). 0 = auto: (pool_size+1)/2.
 queue_pressure() {
   local count
   count=$(queue_length)
 
-  local pool_size
-  pool_size=$(read_pool_json | jq -r '.pool_size // 1')
+  local pool_json pool_size configured_threshold
+  pool_json=$(read_pool_json)
+  pool_size=$(printf '%s' "$pool_json" | jq -r '.pool_size // 1')
+  configured_threshold=$(printf '%s' "$pool_json" | jq -r '.pressure_threshold // 0')
 
-  # Integer division: pressure if count >= pool_size / 2.
-  # Use (pool_size + 1) / 2 to round up for odd pool sizes, matching the
-  # plan's "≥ half pool size" phrasing (e.g. pool=5 → pressure at 3).
-  local threshold=$(( (pool_size + 1) / 2 ))
+  local threshold
+  if [ "$configured_threshold" -gt 0 ] 2>/dev/null; then
+    threshold="$configured_threshold"
+  else
+    # Default: (pool_size + 1) / 2 rounds up for odd pool sizes
+    # (e.g. pool=5 → pressure at 3).
+    threshold=$(( (pool_size + 1) / 2 ))
+  fi
 
   if [ "$count" -ge "$threshold" ]; then
-    warn "high queue pressure ($count queued, pool size $pool_size) — not blocking"
+    warn "high queue pressure ($count queued, threshold $threshold, pool size $pool_size) — not blocking"
     warn "hint: expand pool with 'sub-claude pool resize N' or wait explicitly with 'sub-claude wait <id> --quiet'"
     return 0
   fi
@@ -242,8 +251,8 @@ dispatch_queue() {
       with_pool_lock _locked_set_job_uuid "$job_id" "$slot_uuid"
     fi
 
-    # Update last_dispatch_at for TTL tracking
-    with_pool_lock _locked_update_last_dispatch_at
+    # Update last_activity_at for TTL tracking
+    with_pool_lock _locked_update_last_activity_at
 
     pool_log "watcher" "queue: $job_id dispatched to slot-$slot, prompt sent"
   done

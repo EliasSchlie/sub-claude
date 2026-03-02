@@ -377,12 +377,13 @@ _dispatch_to_slot() {
 # cmd_start "$@"
 # ---------------------------------------------------------------------------
 cmd_start() {
-  local prompt="" block=false terminal="${SUB_CLAUDE_TERMINAL:-}"
+  local prompt="" block=false terminal="${SUB_CLAUDE_TERMINAL:-}" timeout=0
 
   while [ $# -gt 0 ]; do
     case "$1" in
       --block) block=true; shift ;;
       --terminal) terminal="--terminal"; shift ;;
+      --timeout) timeout="$2"; shift 2 ;;
       *)
         if [ -z "$prompt" ]; then
           prompt="$1"
@@ -395,6 +396,11 @@ cmd_start() {
   done
 
   [ -n "$prompt" ] || die "start: prompt required"
+
+  # Validate timeout
+  case "$timeout" in
+    ''|*[!0-9]*) die "start: --timeout must be a non-negative integer (got '$timeout')" ;;
+  esac
 
   # Generate job ID early so auto-init can use it.
   local id
@@ -480,22 +486,41 @@ cmd_start() {
     # Print ID to stderr, block for result on stdout.
     printf '%s\n' "$id" >&2
 
+    local _block_start
+    _block_start=$(date +%s)
+
     # Wait for completion.
     local cur_slot
     cur_slot=$(get_slot_for_job "$id")
     if [ -n "$cur_slot" ]; then
-      wait_for_done "$(_slot_done_file "$cur_slot")" "$(_slot_raw_log "$cur_slot")" "" "$id"
+      local _wfd_timeout=""
+      if [ "$timeout" -gt 0 ] 2>/dev/null; then
+        _wfd_timeout=$(( timeout - ($(date +%s) - _block_start) ))
+        [ "$_wfd_timeout" -gt 0 ] || die "start --block: timed out (limit: ${timeout}s) — job $id may still be running"
+      fi
+      wait_for_done "$(_slot_done_file "$cur_slot")" "$(_slot_raw_log "$cur_slot")" "$_wfd_timeout" "$id"
       _emit_output "$id" "$cur_slot" "$terminal"
     else
       # Job is queued — poll until it gets a slot, then wait.
       while true; do
+        if [ "$timeout" -gt 0 ] 2>/dev/null; then
+          local _elapsed=$(( $(date +%s) - _block_start ))
+          if [ "$_elapsed" -ge "$timeout" ]; then
+            die "start --block: timed out after ${_elapsed}s (limit: ${timeout}s) — job $id may still be running"
+          fi
+        fi
         sleep 2
         status=$(get_job_status "$id")
         case "$status" in
           processing)
             cur_slot=$(get_slot_for_job "$id")
             [ -n "$cur_slot" ] || continue
-            wait_for_done "$(_slot_done_file "$cur_slot")" "$(_slot_raw_log "$cur_slot")" "" "$id"
+            local _wfd_timeout=""
+            if [ "$timeout" -gt 0 ] 2>/dev/null; then
+              _wfd_timeout=$(( timeout - ($(date +%s) - _block_start) ))
+              [ "$_wfd_timeout" -gt 0 ] || die "start --block: timed out (limit: ${timeout}s) — job $id may still be running"
+            fi
+            wait_for_done "$(_slot_done_file "$cur_slot")" "$(_slot_raw_log "$cur_slot")" "$_wfd_timeout" "$id"
             _emit_output "$id" "$cur_slot" "$terminal"
             break
             ;;
@@ -527,7 +552,7 @@ cmd_start() {
 # cmd_followup "$@"
 # ---------------------------------------------------------------------------
 cmd_followup() {
-  local id="" prompt="" block=false terminal="${SUB_CLAUDE_TERMINAL:-}"
+  local id="" prompt="" block=false terminal="${SUB_CLAUDE_TERMINAL:-}" timeout=0
 
   # First positional = id, second positional = prompt.
   local positionals=0
@@ -535,6 +560,7 @@ cmd_followup() {
     case "$1" in
       --block) block=true; shift ;;
       --terminal) terminal="--terminal"; shift ;;
+      --timeout) timeout="$2"; shift 2 ;;
       *)
         positionals=$((positionals + 1))
         case "$positionals" in
@@ -549,6 +575,12 @@ cmd_followup() {
 
   [ -n "$id" ] || die "followup: job ID required"
   [ -n "$prompt" ] || die "followup: prompt required"
+
+  # Validate timeout
+  case "$timeout" in
+    ''|*[!0-9]*) die "followup: --timeout must be a non-negative integer (got '$timeout')" ;;
+  esac
+
   validate_id "$id"
   ensure_pool_exists
 
@@ -630,14 +662,28 @@ cmd_followup() {
 
     printf '%s\n' "$id" >&2
 
+    local _block_start
+    _block_start=$(date +%s)
+
     local cur_slot
     while true; do
+      if [ "$timeout" -gt 0 ] 2>/dev/null; then
+        local _elapsed=$(( $(date +%s) - _block_start ))
+        if [ "$_elapsed" -ge "$timeout" ]; then
+          die "followup --block: timed out after ${_elapsed}s (limit: ${timeout}s) — job $id may still be running"
+        fi
+      fi
       status=$(get_job_status "$id")
       case "$status" in
         processing)
           cur_slot=$(get_slot_for_job "$id")
           [ -n "$cur_slot" ] || { sleep 2; continue; }
-          wait_for_done "$(_slot_done_file "$cur_slot")" "$(_slot_raw_log "$cur_slot")" "" "$id"
+          local _wfd_timeout=""
+          if [ "$timeout" -gt 0 ] 2>/dev/null; then
+            _wfd_timeout=$(( timeout - ($(date +%s) - _block_start) ))
+            [ "$_wfd_timeout" -gt 0 ] || die "followup --block: timed out (limit: ${timeout}s) — job $id may still be running"
+          fi
+          wait_for_done "$(_slot_done_file "$cur_slot")" "$(_slot_raw_log "$cur_slot")" "$_wfd_timeout" "$id"
           _emit_output "$id" "$cur_slot" "$terminal"
           break
           ;;
@@ -846,12 +892,13 @@ cmd_result() {
 # cmd_wait "$@"
 # ---------------------------------------------------------------------------
 cmd_wait() {
-  local id="" quiet=false terminal="${SUB_CLAUDE_TERMINAL:-}"
+  local id="" quiet=false terminal="${SUB_CLAUDE_TERMINAL:-}" timeout=0
 
   while [ $# -gt 0 ]; do
     case "$1" in
       --quiet) quiet=true; shift ;;
       --terminal) terminal="--terminal"; shift ;;
+      --timeout) timeout="$2"; shift 2 ;;
       *)
         if [ -z "$id" ]; then
           id="$1"
@@ -861,11 +908,19 @@ cmd_wait() {
     esac
   done
 
+  # Validate timeout
+  case "$timeout" in
+    *[!0-9]*) die "wait: --timeout must be a non-negative integer (got '$timeout')" ;;
+  esac
+
   # Export terminal flag so delegated cmd_result inherits it.
   SUB_CLAUDE_TERMINAL="$terminal"
 
   # Tolerate the auto-init race: pool init with 5 slots can take 30-60s.
   ensure_pool_exists_or_wait 60
+
+  local _wait_start
+  _wait_start=$(date +%s)
 
   if [ -n "$id" ]; then
     # Wait for a specific job.
@@ -878,6 +933,10 @@ cmd_wait() {
 
     # Poll until done.
     while true; do
+      if [ "$timeout" -gt 0 ] 2>/dev/null; then
+        local _elapsed=$(( $(date +%s) - _wait_start ))
+        [ "$_elapsed" -lt "$timeout" ] || die "wait: timed out after ${_elapsed}s (limit: ${timeout}s)"
+      fi
       local status
       status=$(get_job_status "$id")
       case "$status" in
@@ -885,7 +944,12 @@ cmd_wait() {
           local slot
           slot=$(get_slot_for_job "$id")
           if [ -n "$slot" ]; then
-            wait_for_done "$(_slot_done_file "$slot")" "$(_slot_raw_log "$slot")" "" "$id"
+            local _wfd_timeout=""
+            if [ "$timeout" -gt 0 ] 2>/dev/null; then
+              _wfd_timeout=$(( timeout - ($(date +%s) - _wait_start) ))
+              [ "$_wfd_timeout" -gt 0 ] || die "wait: timed out (limit: ${timeout}s)"
+            fi
+            wait_for_done "$(_slot_done_file "$slot")" "$(_slot_raw_log "$slot")" "$_wfd_timeout" "$id"
             _emit_output "$id" "$slot" "$terminal"
             return 0
           fi
@@ -936,6 +1000,10 @@ cmd_wait() {
     fi
 
     while true; do
+      if [ "$timeout" -gt 0 ] 2>/dev/null; then
+        local _elapsed=$(( $(date +%s) - _wait_start ))
+        [ "$_elapsed" -lt "$timeout" ] || die "wait: timed out after ${_elapsed}s (limit: ${timeout}s)"
+      fi
       local children
       children=$(_get_children)
       [ -n "$children" ] || die "no child sessions to wait for"

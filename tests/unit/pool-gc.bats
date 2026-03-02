@@ -27,10 +27,10 @@ teardown() { _common_teardown; }
   [ "$val" = "3600" ]
 }
 
-@test "pool_init stores last_dispatch_at in pool.json" {
+@test "pool_init stores last_activity_at in pool.json" {
   pool_init --size 1
   local val
-  val=$(jq -r '.last_dispatch_at' "$POOL_DIR/pool.json")
+  val=$(jq -r '.last_activity_at' "$POOL_DIR/pool.json")
   [ "$val" != "null" ]
   [ -n "$val" ]
 }
@@ -156,7 +156,7 @@ teardown() { _common_teardown; }
     version: 1,
     pool_size: 1,
     ttl: 0,
-    last_dispatch_at: "2020-01-01T00:00:00Z",
+    last_activity_at: "2020-01-01T00:00:00Z",
     slots: [],
     pins: {}
   }' | update_pool_json
@@ -241,13 +241,13 @@ teardown() { _common_teardown; }
   [ "$epoch" -lt 1800000000 ]
 }
 
-@test "_locked_update_last_dispatch_at updates pool.json" {
-  jq -n '{version:1, last_dispatch_at: "2020-01-01T00:00:00Z"}' | update_pool_json
+@test "_locked_update_last_activity_at updates pool.json" {
+  jq -n '{version:1, last_activity_at: "2020-01-01T00:00:00Z"}' | update_pool_json
 
-  with_pool_lock _locked_update_last_dispatch_at
+  with_pool_lock _locked_update_last_activity_at
 
   local val
-  val=$(read_pool_json | jq -r '.last_dispatch_at')
+  val=$(read_pool_json | jq -r '.last_activity_at')
   [ "$val" != "2020-01-01T00:00:00Z" ]
   [ -n "$val" ]
 }

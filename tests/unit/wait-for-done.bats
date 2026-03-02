@@ -142,6 +142,63 @@ teardown() {
 # Timeout
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Stop hook block detection
+# ---------------------------------------------------------------------------
+
+@test "wait_for_done accepts stop-triggered done when no block in raw.log" {
+  echo "stop" > "$POOL_DIR/slots/0/done"
+  echo "normal output here" > "$POOL_DIR/slots/0/raw.log"
+  run wait_for_done "$POOL_DIR/slots/0/done" "$POOL_DIR/slots/0/raw.log" 5
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"premature"* ]]
+}
+
+@test "wait_for_done accepts empty done file immediately (PreToolUse)" {
+  touch "$POOL_DIR/slots/0/done"
+  echo "Stop hook error: this should not matter" > "$POOL_DIR/slots/0/raw.log"
+  run wait_for_done "$POOL_DIR/slots/0/done" "$POOL_DIR/slots/0/raw.log" 5
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"premature"* ]]
+}
+
+@test "wait_for_done discards stop-triggered done when block detected in raw.log" {
+  echo "stop" > "$POOL_DIR/slots/0/done"
+  printf 'response text\nStop hook error: You did not add improvement suggestions\n' > "$POOL_DIR/slots/0/raw.log"
+  # After discard, no new done file → falls through to timeout
+  run wait_for_done "$POOL_DIR/slots/0/done" "$POOL_DIR/slots/0/raw.log" 4
+  [ "$status" -eq 1 ]  # times out
+}
+
+@test "wait_for_done handles block-then-approve cycle" {
+  printf 'first response\nStop hook error: missing suggestions\n' > "$POOL_DIR/slots/0/raw.log"
+  echo "stop" > "$POOL_DIR/slots/0/done"
+
+  # After discard, simulate retry: new output and a fresh done file
+  (
+    sleep 3
+    printf 'retry response\nImprovement suggestions: None\n' >> "$POOL_DIR/slots/0/raw.log"
+    echo "stop" > "$POOL_DIR/slots/0/done"
+  ) &
+  local bg_pid=$!
+
+  run wait_for_done "$POOL_DIR/slots/0/done" "$POOL_DIR/slots/0/raw.log" 10
+  wait "$bg_pid" 2>/dev/null || true
+  [ "$status" -eq 0 ]
+}
+
+@test "wait_for_done strips ANSI escapes when checking for block" {
+  echo "stop" > "$POOL_DIR/slots/0/done"
+  # Simulate ANSI-colored "Stop hook error:" in raw.log
+  printf 'output\n\x1b[1mStop hook error:\x1b[0m blocked by check-improvements\n' > "$POOL_DIR/slots/0/raw.log"
+  run wait_for_done "$POOL_DIR/slots/0/done" "$POOL_DIR/slots/0/raw.log" 4
+  [ "$status" -eq 1 ]  # times out (done signal discarded)
+}
+
+# ---------------------------------------------------------------------------
+# Timeout
+# ---------------------------------------------------------------------------
+
 @test "wait_for_done returns 1 on hard timeout when output keeps growing" {
   # Continuously grow the log so idle fallback never triggers
   (

@@ -428,112 +428,67 @@ Two layers: Stop hook (primary, instant) + idle heuristic (fallback, warns).
 
 ### Primary: Done Sentinel Hook
 
-A shared hook script fires the done sentinel **whenever user input is needed** — matching exactly when the notification bell would ring in a normal session. This covers:
+The done sentinel fires **whenever user input is needed** — matching exactly when the notification bell would ring in a normal session. This covers:
 
 - **Stop** — Claude finished a response turn
 - **PreToolUse ExitPlanMode** — Claude proposed a plan (waiting for approval)
 - **PreToolUse AskUserQuestion** — Claude asked a question (waiting for answer)
 
 1. Pool init exports `SUB_CLAUDE_DONE_FILE=$slot_dir/done` in the per-slot wrapper script (before launching `claude`)
-2. Hook checks env var, touches the file
+2. Hook writes to the file (see marker protocol below)
 3. `wait`/`--block` polls for sentinel
 4. Sentinel `rm`'d before each new prompt
 
-**Hook script** (`config/claude/hooks/sub-claude-done.sh`):
-```bash
-#!/usr/bin/env bash
-# Signal "waiting for input" to sub-claude. No-op outside pool sessions.
-[ -n "$SUB_CLAUDE_DONE_FILE" ] && touch "$SUB_CLAUDE_DONE_FILE"
+#### Hook delivery: Plugin vs. dotfiles
+
+**Plugin (`hooks/hooks.json`)** — self-contained, installed automatically:
+- **Stop**: writes `"stop"` into `$SUB_CLAUDE_DONE_FILE` (marker for block detection)
+- **PreToolUse ExitPlanMode|AskUserQuestion**: `touch`es `$SUB_CLAUDE_DONE_FILE` (empty file)
+
+**Dotfiles (legacy)** — if the user has blocking Stop hooks (e.g. `check-improvements.sh`), the done signal for Stop events can be inlined into that hook as `pool_done()`, called only on the `approve` codepath. This avoids premature signals entirely but requires manual wiring.
+
+#### Done file marker protocol
+
+The done file content distinguishes Stop from PreToolUse signals:
+
+| Source | Done file content | Validation |
+|--------|------------------|------------|
+| Stop hook | `"stop\n"` | `wait_for_done` checks raw.log for blocking patterns |
+| PreToolUse hook | empty (0 bytes) | Accepted immediately — never premature |
+
+#### Stop hook block detection (`_stop_hook_blocked`)
+
+When the done file contains `"stop"`, `wait_for_done` validates it against `raw.log`:
+
+1. **Immediate check**: scan recent raw.log (last 2000 bytes, or new content since last discard) for `"Stop hook error:"` pattern
+2. **Delayed check** (0.5s): re-scan to tolerate TUI flush latency
+3. **If block detected**: delete done file, advance `block_check_offset`, continue polling
+4. **If no block**: accept — legitimate completion
+
+The `block_check_offset` tracks the raw.log position of the last discarded signal. Subsequent checks only scan new content, preventing re-matching old block messages from previous retry cycles.
+
+```
+Stop hook fires → done file contains "stop"
+  → wait_for_done detects it
+  → reads content: "stop" → validate
+  → _stop_hook_blocked checks raw.log
+  → "Stop hook error:" found? → discard, keep waiting
+  → not found? → accept, return 0
 ```
 
-**settings.json additions** (done signal fires on Stop via `check-improvements.sh` and on PreToolUse via standalone script):
-
-> **Note:** The Stop hook done signal is inlined into `check-improvements.sh` (as `pool_done()`)
-> rather than a separate hook entry. This ensures the done file is only touched on *approve*,
-> never when the hook blocks — preventing a premature done signal that would cause `wait_for_done`
-> to miss the retried response.
-
-```json
-{
-  "Stop": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash ~/.claude/hooks/check-improvements.sh"
-        }
-      ]
-    }
-  ],
-  "PreToolUse": [
-    {
-      "matcher": "ExitPlanMode|AskUserQuestion",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash ~/.claude/hooks/sub-claude-done.sh",
-          "async": true
-        }
-      ]
-    }
-  ]
-}
-```
-
-> The existing PreToolUse bell (`notify-sound`) for ExitPlanMode|AskUserQuestion should also be wrapped to check `CLAUDE_BELL_OFF` — otherwise pool sessions ring a bell with nobody listening.
+> **Graceful degradation**: the grep pattern (`stop hook error:`) was verified against
+> Claude Code ~1.0.x (March 2026). If Claude Code changes this rendering, the pattern
+> stops matching and all Stop signals are accepted immediately — equivalent to
+> pre-plugin behavior (no regression, just no block detection).
 
 ### Fallback: Idle Heuristic (30s)
 
-If Stop hook doesn't fire, 30s of no output growth triggers fallback. **Always warns:**
+If neither done sentinel nor meta.json status appears, 30s of no output growth triggers fallback. **Always warns:**
 ```
 warning: Stop hook did not fire — completed via idle fallback (30s)
-warning: check that sub-claude-done.sh hook is configured in settings.json
 ```
 
-```bash
-IDLE_FALLBACK=30
-
-wait_for_done() {
-  local done_file="$1" raw_log="$2" timeout="${3:-600}"
-  local w=0 last=0 idle_n=0 used_fallback=false
-  local initial_sz
-  initial_sz=$(wc -c < "$raw_log" 2>/dev/null | tr -d ' ')
-  initial_sz="${initial_sz:-0}"
-
-  while [ "$w" -lt "$timeout" ]; do
-    [ -f "$done_file" ] && return 0
-
-    local sz
-    sz=$(wc -c < "$raw_log" 2>/dev/null | tr -d ' ')
-    sz="${sz:-0}"
-    if [ "$sz" = "$last" ] && [ "$last" -gt 0 ]; then
-      idle_n=$((idle_n + 1))
-      if [ "$idle_n" -ge "$IDLE_FALLBACK" ]; then
-        # Guard: only treat idle as "done" if the log actually grew since
-        # we started waiting. No growth means the prompt was never submitted.
-        if [ "$sz" -gt "$initial_sz" ]; then
-          used_fallback=true
-        fi
-        break
-      fi
-    else
-      idle_n=0
-      last="$sz"
-    fi
-
-    sleep 1
-    w=$((w + 1))
-  done
-
-  if $used_fallback; then
-    echo "warning: Stop hook did not fire — completed via idle fallback (${IDLE_FALLBACK}s)" >&2
-    echo "warning: check that sub-claude-done.sh hook is configured in settings.json" >&2
-    return 0
-  fi
-
-  return 1  # timed out
-}
-```
+See `wait_for_done()` in `lib/sub-claude/tmux.sh` for the full implementation.
 
 Warning surfaces:
 - **Blocking callers** — stderr (visible in Bash tool output)

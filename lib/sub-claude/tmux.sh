@@ -122,7 +122,7 @@ capture_pane() {
 # Does NOT handle: 8-bit CSI (0x9b), APC/PM/SOS sequences. These are rare
 # in practice and omitted to keep the sed expressions maintainable.
 _strip_ansi() {
-  sed $'s/\033\\[[0-9;]*[A-Za-z]//g
+  LC_ALL=C sed $'s/\033\\[[0-9;]*[A-Za-z]//g
         s/\033\\][^\007]*\007//g
         s/\033\\][^\033]*\033\\\\//g
         s/\033[()][A-Z0-9]//g
@@ -499,9 +499,58 @@ clear_scrollback() {
 # IDLE_FALLBACK — seconds of output silence before triggering idle fallback.
 IDLE_FALLBACK=30
 
+# _stop_hook_blocked — check raw.log for evidence that a Stop hook blocked.
+#
+# Claude Code renders "Stop hook error: <reason>" when a Stop hook returns
+# {"decision":"block",...}. We scan raw.log for this pattern in recent output.
+#
+# Pattern verified against Claude Code ~1.0.x (March 2026). If Claude Code
+# changes this rendering, the grep will stop matching and wait_for_done will
+# accept all Stop signals immediately — equivalent to pre-plugin behavior
+# (no regression, just no block detection). If you notice premature done
+# signals after a Claude Code update, check the rendered text and update the
+# pattern below.
+#
+# Two-pass check: immediate first, then after 0.5s. The second pass tolerates
+# TUI flush latency — the block message may not be in raw.log immediately
+# after the done file is written. This adds ~0.5s to every Stop-triggered
+# completion. PreToolUse signals bypass this entirely (empty done file).
+#
+# Arguments:
+#   raw_log — path to pipe-pane output log
+#   offset  — byte offset to start checking from (0 = check last 2000 bytes)
+#
+# Returns: 0 if block detected, 1 if no block
+_stop_hook_blocked() {
+  local raw_log="$1" offset="${2:-0}"
+  local check_region pass
+
+  for pass in 1 2; do
+    # Pass 1: immediate. Pass 2: wait for TUI flush.
+    [ "$pass" -eq 2 ] && sleep 0.5
+
+    if [ "$offset" -gt 0 ]; then
+      check_region=$(tail -c "+$((offset + 1))" "$raw_log" 2>/dev/null)
+    else
+      check_region=$(tail -c 2000 "$raw_log" 2>/dev/null)
+    fi
+
+    if printf '%s\n' "$check_region" | _strip_ansi | grep -qi 'stop hook error:'; then
+      return 0  # block detected
+    fi
+  done
+
+  return 1  # no block
+}
+
 # wait_for_done — block until a job completes or times out.
 #
-# Primary path:   polls for the done sentinel file (written by the Stop hook).
+# Primary path:   polls for the done sentinel file (written by the Stop hook
+#                 or PreToolUse hook). When the done file contains "stop", it
+#                 was triggered by the Stop event — validate against the raw
+#                 log for Stop hook blocking patterns before accepting. This
+#                 prevents premature done signals when another Stop hook
+#                 (e.g. check-improvements.sh) blocks the response.
 # Secondary path: if a job_id is provided, checks meta.json for status
 #                 "completed" (set by the watcher). Catches cases where the
 #                 watcher processed the done file before we started polling.
@@ -524,6 +573,8 @@ IDLE_FALLBACK=30
 wait_for_done() {
   local done_file="$1" raw_log="$2" timeout="${3:-600}" job_id="${4:-}"
   local w=0 last=0 idle_n=0 used_fallback=false
+  local block_check_offset=0  # raw_log offset for detecting new Stop hook blocks
+  local done_source="" current_sz=""
 
   # Record the initial log size. If the log never grows beyond this baseline,
   # the session never processed anything (prompt pasted but not submitted —
@@ -533,8 +584,34 @@ wait_for_done() {
   initial_sz="${initial_sz:-0}"
 
   while [ "$w" -lt "$timeout" ]; do
-    # Primary: done sentinel file (written by Stop hook)
-    [ -f "$done_file" ] && return 0
+    # Primary: done sentinel file (written by Stop/PreToolUse hook)
+    if [ -f "$done_file" ]; then
+      # cat piped to tr (not redirect) so 2>/dev/null suppresses ENOENT
+      # if the file disappears between -f check and read.
+      done_source=$(cat "$done_file" 2>/dev/null | tr -d '[:space:]')
+
+      if [ "$done_source" = "stop" ]; then
+        # Stop-triggered done signal — validate it's not premature.
+        # Another Stop hook may have blocked (e.g. check-improvements.sh).
+        # The plugin's Stop hook fires unconditionally (can't know if another
+        # hook will block), so we check raw.log for the block message.
+        #
+        # Claude Code renders "Stop hook error: <reason>" when a Stop hook
+        # blocks. We look for this pattern in recent raw.log output. Two-pass
+        # check with a gap to tolerate TUI flush latency.
+        if _stop_hook_blocked "$raw_log" "$block_check_offset"; then
+          pool_log "wait" "ignoring premature done signal (Stop hook blocked)"
+          rm -f "$done_file"
+          current_sz=$(wc -c < "$raw_log" 2>/dev/null | tr -d ' ')
+          block_check_offset="${current_sz:-0}"
+          idle_n=0
+          sleep 1; w=$((w + 1)); continue
+        fi
+      fi
+
+      # PreToolUse-triggered (empty file) or validated Stop — accept.
+      return 0
+    fi
 
     # Secondary: if a job ID was provided, check whether the watcher already
     # marked it completed (covers the case where the done file was processed

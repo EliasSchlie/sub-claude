@@ -31,10 +31,26 @@ sub-claude wait  # waits for the next one
 
 ## Installation
 
-### From source
+### Claude Code Plugin (recommended)
+
+Installs the skill and hooks — Claude learns how to use sub-claude automatically.
 
 ```bash
-git clone <repo-url> sub-claude
+# Per-session (development/testing):
+claude --plugin-dir /path/to/sub-claude
+
+# Persistent (once a marketplace is published):
+# Inside Claude Code, run:
+#   /plugin marketplace add EliasSchlie/claude-plugins
+#   /plugin install sub-claude@elias-tools
+```
+
+### CLI
+
+The plugin handles Claude Code integration. The CLI binary needs a separate install:
+
+```bash
+git clone https://github.com/EliasSchlie/sub-claude.git
 cd sub-claude
 ./install.sh
 ```
@@ -47,23 +63,6 @@ This installs to `~/.local/bin/` and `~/.local/lib/`. Use `--prefix /usr/local` 
 - **tmux**
 - **jq**
 - **claude** CLI (installed and authenticated)
-
-### Stop Hook Setup
-
-sub-claude needs a Claude Code stop hook to detect when sessions finish. The installer copies `sub-claude-done.sh` to `~/.claude/hooks/`. Add it to your `~/.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "Stop": [{
-      "matcher": "",
-      "hooks": [{ "type": "command", "command": "~/.claude/hooks/sub-claude-done.sh" }]
-    }]
-  }
-}
-```
-
-Without the hook, completion detection falls back to a 30-second idle timer.
 
 ## CLI Reference
 

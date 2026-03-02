@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"${SUB_CLAUDE_DONE_FILE:-}\" ] && echo stop > \"$SUB_CLAUDE_DONE_FILE\" || true",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "ExitPlanMode|AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"${SUB_CLAUDE_DONE_FILE:-}\" ] && touch \"$SUB_CLAUDE_DONE_FILE\" || true",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "EnterWorktree|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"${SUB_CLAUDE:-}\" = \"1\" ] || exit 0; input=$(cat); if printf '%s\\n' \"$input\" | grep -qE 'sub-claude\\b.*\\bpool\\s+(stop|gc|destroy)' && ! printf '%s\\n' \"$input\" | grep -qE 'sub-claude\\b.*-C\\b'; then printf '{\"decision\":\"block\",\"reason\":\"You are a sub-claude agent. Cannot stop/gc/destroy your own sub-claude pool. Use -C to target a different pool.\"}'; exit 0; fi; printf '%s\\n' \"$input\" | grep -q '\"command\"' && exit 0; printf '{\"decision\":\"block\",\"reason\":\"You are a sub-claude agent. EnterWorktree is blocked — worktrees trap the sub-claude slot in a different directory.\"}'"
+          }
+        ]
+      }
+    ]
+  }
+}

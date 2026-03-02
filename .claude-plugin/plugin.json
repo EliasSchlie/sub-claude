@@ -1,0 +1,10 @@
+{
+  "name": "sub-claude",
+  "description": "Session-oriented pool of persistent Claude TUI slots backed by tmux",
+  "version": "0.1.0",
+  "author": {
+    "name": "Elias Schlie"
+  },
+  "repository": "https://github.com/EliasSchlie/sub-claude",
+  "license": "MIT"
+}

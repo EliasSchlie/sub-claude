@@ -1334,6 +1334,12 @@ cmd_pin() {
   local id="${1:-}" duration="${2:-120}"
   [ -n "$id" ] || die "pin: job ID required"
   validate_id "$id"
+
+  # Validate duration is a positive integer
+  case "$duration" in
+    ''|*[!0-9]*|0) die "pin: duration must be a positive integer (got '$duration')" ;;
+  esac
+
   ensure_pool_exists
 
   local status

@@ -20,6 +20,10 @@ This installs:
 - `~/.local/lib/claude-output/` — output parser
 - `~/.local/share/sub-claude/` — Claude Code plugin (hooks + skills)
 
+Ensure `~/.local/bin` is in your PATH. The installer warns if it isn't.
+
+Pool sessions auto-load the plugin hooks and skills via `--plugin-dir`.
+
 ## Verify
 
 ```bash

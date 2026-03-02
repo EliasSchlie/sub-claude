@@ -3,17 +3,17 @@ set -euo pipefail
 
 # Resolve lib dir: prefer sibling lib/ next to bin/, fall back to ~/.local/lib/
 _bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLAUDE_POOL_LIB="${_bin_dir}/../lib/claude-pool"
-if [[ ! -d "$CLAUDE_POOL_LIB" ]]; then
-  CLAUDE_POOL_LIB="$HOME/.local/lib/claude-pool"
+SUB_CLAUDE_LIB="${_bin_dir}/../lib/sub-claude"
+if [[ ! -d "$SUB_CLAUDE_LIB" ]]; then
+  SUB_CLAUDE_LIB="$HOME/.local/lib/sub-claude"
 fi
-if [[ ! -d "$CLAUDE_POOL_LIB" ]]; then
-  echo "sub-claude: lib dir not found (tried ${_bin_dir}/../lib/claude-pool and ~/.local/lib/claude-pool)" >&2
+if [[ ! -d "$SUB_CLAUDE_LIB" ]]; then
+  echo "sub-claude: lib dir not found (tried ${_bin_dir}/../lib/sub-claude and ~/.local/lib/sub-claude)" >&2
   exit 1
 fi
-CLAUDE_POOL_LIB="$(cd "$CLAUDE_POOL_LIB" && pwd)"
+SUB_CLAUDE_LIB="$(cd "$SUB_CLAUDE_LIB" && pwd)"
 
-# Source output parser library (standalone, no claude-pool deps)
+# Source output parser library (standalone, no sub-claude deps)
 _output_lib="${_bin_dir}/../lib/claude-output"
 if [[ ! -d "$_output_lib" ]]; then
   _output_lib="$HOME/.local/lib/claude-output"
@@ -28,11 +28,11 @@ if [[ -f "$_output_lib/jsonl.sh" ]]; then
 fi
 
 # Source libs — core.sh first, then the rest
-if [[ -f "$CLAUDE_POOL_LIB/core.sh" ]]; then
+if [[ -f "$SUB_CLAUDE_LIB/core.sh" ]]; then
   # shellcheck source=/dev/null
-  source "$CLAUDE_POOL_LIB/core.sh"
+  source "$SUB_CLAUDE_LIB/core.sh"
 fi
-for _lib in "$CLAUDE_POOL_LIB"/*.sh; do
+for _lib in "$SUB_CLAUDE_LIB"/*.sh; do
   [[ "$(basename "$_lib")" == "core.sh" ]] && continue
   # shellcheck source=/dev/null
   source "$_lib"
@@ -77,18 +77,18 @@ EOF
 }
 
 # Parse global options before the subcommand.
-export CLAUDE_POOL_VERBOSITY="${CLAUDE_POOL_VERBOSITY:-raw}"
-export CLAUDE_POOL_TERMINAL="${CLAUDE_POOL_TERMINAL:-}"
+export SUB_CLAUDE_VERBOSITY="${SUB_CLAUDE_VERBOSITY:-raw}"
+export SUB_CLAUDE_TERMINAL="${SUB_CLAUDE_TERMINAL:-}"
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
     --verbosity|-v)
       [[ $# -ge 2 ]] || { echo "sub-claude: -v requires an argument" >&2; exit 1; }
-      CLAUDE_POOL_VERBOSITY="$2"; shift 2
-      case "$CLAUDE_POOL_VERBOSITY" in
+      SUB_CLAUDE_VERBOSITY="$2"; shift 2
+      case "$SUB_CLAUDE_VERBOSITY" in
         response|conversation|full|raw) ;;
-        *) echo "sub-claude: invalid verbosity '$CLAUDE_POOL_VERBOSITY' (use response|conversation|full|raw)" >&2; exit 1 ;;
+        *) echo "sub-claude: invalid verbosity '$SUB_CLAUDE_VERBOSITY' (use response|conversation|full|raw)" >&2; exit 1 ;;
       esac ;;
-    --terminal) CLAUDE_POOL_TERMINAL="--terminal"; shift ;;
+    --terminal) SUB_CLAUDE_TERMINAL="--terminal"; shift ;;
     *) break ;;
   esac
 done

@@ -1,9 +1,9 @@
-# Integration test setup for claude-pool.
+# Integration test setup for sub-claude.
 # Uses REAL tmux but a MOCK claude binary.
 # Each test gets an isolated pool directory and tmux server.
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-LIB_DIR="$REPO_ROOT/lib/claude-pool"
+LIB_DIR="$REPO_ROOT/lib/sub-claude"
 OUTPUT_LIB_DIR="$REPO_ROOT/lib/claude-output"
 HELPERS_DIR="$(cd "$BATS_TEST_DIRNAME/../helpers" && pwd)"
 MOCK_CLAUDE="$HELPERS_DIR/mock-claude.sh"
@@ -59,17 +59,17 @@ MOCKEOF
   source "$OUTPUT_LIB_DIR/parse.sh"
 
   # Source all libs in dependency order
-  # shellcheck source=../../lib/claude-pool/core.sh
+  # shellcheck source=../../lib/sub-claude/core.sh
   source "$LIB_DIR/core.sh"
-  # shellcheck source=../../lib/claude-pool/tmux.sh
+  # shellcheck source=../../lib/sub-claude/tmux.sh
   source "$LIB_DIR/tmux.sh"
-  # shellcheck source=../../lib/claude-pool/offload.sh
+  # shellcheck source=../../lib/sub-claude/offload.sh
   source "$LIB_DIR/offload.sh"
-  # shellcheck source=../../lib/claude-pool/queue.sh
+  # shellcheck source=../../lib/sub-claude/queue.sh
   source "$LIB_DIR/queue.sh"
-  # shellcheck source=../../lib/claude-pool/pool.sh
+  # shellcheck source=../../lib/sub-claude/pool.sh
   source "$LIB_DIR/pool.sh"
-  # shellcheck source=../../lib/claude-pool/session.sh
+  # shellcheck source=../../lib/sub-claude/session.sh
   source "$LIB_DIR/session.sh"
 
   # Override get_project_dir to use our test project
@@ -94,9 +94,9 @@ MOCKEOF
     mkdir -p "$slot_dir" "$jsonl_dir"
     cat > "$slot_dir/run.sh" <<RUNEOF
 #!/usr/bin/env bash
-export CLAUDE_POOL=1
-export CLAUDE_POOL_SLOT=$slot
-export CLAUDE_POOL_DONE_FILE="$slot_dir/done"
+export SUB_CLAUDE=1
+export SUB_CLAUDE_SLOT=$slot
+export SUB_CLAUDE_DONE_FILE="$slot_dir/done"
 export CLAUDE_BELL_OFF=1
 export MOCK_CLAUDE_JSONL_DIR="$jsonl_dir"
 cd $(printf '%q' "$project_dir")

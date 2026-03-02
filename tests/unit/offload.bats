@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC2030,SC2031
-# Unit tests for config/lib/claude-pool/offload.sh
+# Unit tests for config/lib/sub-claude/offload.sh
 
 load '../helpers/setup'
 load '../helpers/mocks'

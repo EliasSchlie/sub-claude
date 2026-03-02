@@ -1,72 +1,72 @@
 ---
-name: claude-pool
+name: sub-claude
 description: Use when needing to run Claude instances in parallel or in sequence — fire-and-forget tasks, multi-turn conversations, or any headless Claude work. Prefer over claude-spawn for all new work.
 ---
 
-# claude-pool
+# sub-claude
 
-A **session-oriented pool** of persistent Claude TUI slots backed by tmux. Solves a fundamental problem: launching a new `claude` process while another Claude session has a Bash tool call in flight silently destroys that call's output. claude-pool pre-starts sessions and reuses them — `start`, `followup`, and `wait` never launch new `claude` processes.
+A **session-oriented pool** of persistent Claude TUI slots backed by tmux. Solves a fundamental problem: launching a new `claude` process while another Claude session has a Bash tool call in flight silently destroys that call's output. sub-claude pre-starts sessions and reuses them — `start`, `followup`, and `wait` never launch new `claude` processes.
 
 **Key difference from claude-spawn:** pool sessions run interactive TUIs (not `claude -p`). Output is captured terminal content, not JSON. Sessions persist across prompts and support multi-turn conversation via `followup`.
 
-**Output parsing:** Use `-v` / `--verbosity` to filter output. Levels: `response` (final model answer only), `conversation` (all prompts + responses), `full` (everything minus TUI chrome), `raw` (default, unfiltered). Example: `claude-pool -v response wait "$id"`
+**Output parsing:** Use `-v` / `--verbosity` to filter output. Levels: `response` (final model answer only), `conversation` (all prompts + responses), `full` (everything minus TUI chrome), `raw` (default, unfiltered). Example: `sub-claude -v response wait "$id"`
 
 ## Quick Start
 
 ```bash
 # Fire-and-forget
-id=$(claude-pool start "refactor auth module")
+id=$(sub-claude start "refactor auth module")
 
 # Blocking — wait for result (parsed to just the response)
-result=$(claude-pool -v response start "summarize this file" --block)
+result=$(sub-claude -v response start "summarize this file" --block)
 
 # Multi-turn
-id=$(claude-pool start "analyze the codebase")
-claude-pool wait "$id"
-claude-pool followup "$id" "now suggest improvements" --block
+id=$(sub-claude start "analyze the codebase")
+sub-claude wait "$id"
+sub-claude followup "$id" "now suggest improvements" --block
 
 # See what a running session is doing
-id=$(claude-pool start "long refactor task")
-claude-pool capture "$id"
+id=$(sub-claude start "long refactor task")
+sub-claude capture "$id"
 
 # Parallel work
-id1=$(claude-pool start "task one")
-id2=$(claude-pool start "task two")
-claude-pool wait  # waits for any direct child
-claude-pool wait  # waits for the next one
+id1=$(sub-claude start "task one")
+id2=$(sub-claude start "task two")
+sub-claude wait  # waits for any direct child
+sub-claude wait  # waits for the next one
 ```
 
 ## CLI Reference
 
 ```
 # Global options
-claude-pool [-v response|conversation|full|raw] <command> [args]
+sub-claude [-v response|conversation|full|raw] <command> [args]
 
 # Session commands
-claude-pool start "prompt" [--block]
-claude-pool followup <id> "prompt" [--block]
-claude-pool input <id> "text"            # type text + Enter into session
-claude-pool key <id> Escape|Enter|Up|... # send special key
-claude-pool capture <id>                 # live terminal or stored snapshot
-claude-pool result <id>                  # final output (errors if still running)
-claude-pool wait [<id>] [--quiet]        # block until done
-claude-pool pin <id> [duration]          # prevent offloading (default: 120s)
-claude-pool unpin <id>                   # allow offloading again
-claude-pool status <id>                  # show session state
-claude-pool list [--tree | --all]        # show sessions
-claude-pool stop <id> | --tree | --all   # interrupt busy session(s)
-claude-pool cancel <id>                  # remove queued job (not yet running)
-claude-pool clean <id> [--force | --force-all]
+sub-claude start "prompt" [--block]
+sub-claude followup <id> "prompt" [--block]
+sub-claude input <id> "text"            # type text + Enter into session
+sub-claude key <id> Escape|Enter|Up|... # send special key
+sub-claude capture <id>                 # live terminal or stored snapshot
+sub-claude result <id>                  # final output (errors if still running)
+sub-claude wait [<id>] [--quiet]        # block until done
+sub-claude pin <id> [duration]          # prevent offloading (default: 120s)
+sub-claude unpin <id>                   # allow offloading again
+sub-claude status <id>                  # show session state
+sub-claude list [--tree | --all]        # show sessions
+sub-claude stop <id> | --tree | --all   # interrupt busy session(s)
+sub-claude cancel <id>                  # remove queued job (not yet running)
+sub-claude clean <id> [--force | --force-all]
 
 # Pool management
-claude-pool pool init [--size N]         # start pool (default: 5 slots)
-claude-pool pool stop                    # kill pool + tmux server
-claude-pool pool status                  # show slots, sessions, queue
-claude-pool pool resize N                # add or remove slots
+sub-claude pool init [--size N]         # start pool (default: 5 slots)
+sub-claude pool stop                    # kill pool + tmux server
+sub-claude pool status                  # show slots, sessions, queue
+sub-claude pool resize N                # add or remove slots
 
 # Debug
-claude-pool attach <id>                  # attach to tmux pane (live view)
-claude-pool uuid <id>                    # print Claude UUID, slot, status
+sub-claude attach <id>                  # attach to tmux pane (live view)
+sub-claude uuid <id>                    # print Claude UUID, slot, status
 ```
 
 ## Output Contract
@@ -108,9 +108,9 @@ a1b2c3d4   queued                add logging
 `followup` resumes a finished session with a new prompt — conversation history is preserved.
 
 ```bash
-id=$(claude-pool start "remember: the password is banana")
-claude-pool wait "$id"
-claude-pool followup "$id" "what's the password?" --block
+id=$(sub-claude start "remember: the password is banana")
+sub-claude wait "$id"
+sub-claude followup "$id" "what's the password?" --block
 ```
 
 Rules:
@@ -131,15 +131,15 @@ Under **queue pressure** (queued jobs ≥ half pool size), `--block` degrades to
 For interactive sessions or when you need to poke at a running Claude:
 
 ```bash
-claude-pool key "$id" Escape            # interrupt, dismiss menu
-claude-pool key "$id" Enter             # confirm
-claude-pool input "$id" "some message"  # type text + Enter
-claude-pool capture "$id"               # see current terminal state
+sub-claude key "$id" Escape            # interrupt, dismiss menu
+sub-claude key "$id" Enter             # confirm
+sub-claude input "$id" "some message"  # type text + Enter
+sub-claude capture "$id"               # see current terminal state
 ```
 
 `input` on an **idle** (finished) session sends text but warns it won't be tracked as a job — use `followup` instead for new prompts.
 
-`attach` opens the tmux pane for direct observation. Both you and `claude-pool` can type — avoid typing while Claude is actively sending keys or outputs will interleave.
+`attach` opens the tmux pane for direct observation. Both you and `sub-claude` can type — avoid typing while Claude is actively sending keys or outputs will interleave.
 
 ## Session Isolation
 
@@ -158,9 +158,9 @@ Job IDs are scoped to the caller. The pool identifies callers by walking the pro
 Prevents a slot from being reclaimed (offloaded) while you're in the middle of an interactive sequence — menus, multi-step key flows, anything where losing the slot mid-action would break the interaction.
 
 ```bash
-claude-pool pin "$id"        # default: 120 seconds
-claude-pool pin "$id" 300    # 5 minutes
-claude-pool unpin "$id"      # release immediately
+sub-claude pin "$id"        # default: 120 seconds
+sub-claude pin "$id" 300    # 5 minutes
+sub-claude unpin "$id"      # release immediately
 ```
 
 Always prints a reminder:
@@ -178,41 +178,41 @@ When all slots are busy, jobs queue up (FIFO). The pool handles this transparent
 Watch for this warning on `--block`:
 ```
 warning: high queue pressure (3 queued, pool size 5) — not blocking
-hint: expand pool with 'claude-pool pool resize N' or wait explicitly with 'claude-pool wait <id> --quiet'
+hint: expand pool with 'sub-claude pool resize N' or wait explicitly with 'sub-claude wait <id> --quiet'
 ```
 
 When you see it: the call returned the ID immediately without blocking. Either `wait <id>` explicitly, or resize the pool.
 
 ```bash
-claude-pool pool resize 8    # grow to 8 slots (runs claude in new panes — see caution below)
-claude-pool pool status      # inspect current queue + slot state
+sub-claude pool resize 8    # grow to 8 slots (runs claude in new panes — see caution below)
+sub-claude pool status      # inspect current queue + slot state
 ```
 
 ## Best Practices
 
 **Prefer fire-and-forget + explicit wait:**
 ```bash
-id1=$(claude-pool start "task one")
-id2=$(claude-pool start "task two")
-claude-pool wait "$id1"
-r1=$(claude-pool result "$id1")
-claude-pool wait "$id2"
-r2=$(claude-pool result "$id2")
+id1=$(sub-claude start "task one")
+id2=$(sub-claude start "task two")
+sub-claude wait "$id1"
+r1=$(sub-claude result "$id1")
+sub-claude wait "$id2"
+r2=$(sub-claude result "$id2")
 ```
 
 **Use `followup` for multi-turn, not `input`:**
 ```bash
 # Good
-claude-pool followup "$id" "next question" --block
+sub-claude followup "$id" "next question" --block
 
 # Only use input for raw terminal interaction (menus, interactive prompts)
-claude-pool input "$id" "raw text"
+sub-claude input "$id" "raw text"
 ```
 
 **Clean completed sessions to free slots:**
 ```bash
-claude-pool clean --completed       # remove all finished direct children
-claude-pool clean "$id"             # remove specific session + its children
+sub-claude clean --completed       # remove all finished direct children
+sub-claude clean "$id"             # remove specific session + its children
 ```
 
 **Don't block when the pool might be saturated:** check `pool status` if you're launching many jobs and need reliable blocking.
@@ -229,27 +229,27 @@ Pool sessions receive these automatically (set in the per-slot wrapper script):
 
 | Variable | Purpose |
 |----------|---------|
-| `CLAUDE_POOL=1` | Signals pool session context |
-| `CLAUDE_POOL_SLOT=<N>` | Slot index this session runs in |
-| `CLAUDE_POOL_DONE_FILE=<path>` | Path the Stop hook writes to signal completion |
+| `SUB_CLAUDE=1` | Signals pool session context |
+| `SUB_CLAUDE_SLOT=<N>` | Slot index this session runs in |
+| `SUB_CLAUDE_DONE_FILE=<path>` | Path the Stop hook writes to signal completion |
 | `CLAUDE_BELL_OFF=1` | Suppresses notification bell in hooks |
 
-Check `CLAUDE_POOL` to detect whether you're running inside a pool session.
+Check `SUB_CLAUDE` to detect whether you're running inside a pool session.
 
 ## Pool Management
 
 ```bash
-claude-pool pool init           # start 5-slot pool in current project dir
-claude-pool pool init --size 8  # explicit size — always overprovision
-claude-pool pool status         # inspect slots, queue, pins
-claude-pool pool resize 8       # grow (adds slots)
-claude-pool pool resize 3       # shrink (decommissions idle slots gracefully)
-claude-pool pool stop           # kill everything
+sub-claude pool init           # start 5-slot pool in current project dir
+sub-claude pool init --size 8  # explicit size — always overprovision
+sub-claude pool status         # inspect slots, queue, pins
+sub-claude pool resize 8       # grow (adds slots)
+sub-claude pool resize 3       # shrink (decommissions idle slots gracefully)
+sub-claude pool stop           # kill everything
 ```
 
 > **Always overprovision.** Initialize the pool bigger than what you expect to use. Sub-agents spawned by your pool sessions, other Claude instances in the same directory, and automation hooks all consume slots. A pool that looks big enough at launch can saturate quickly once nested work kicks in.
 
-Pool state lives in `~/.claude-pool/pools/<project-hash>/`. One pool per project directory (git root, or `$PWD` outside git). All Claude instances in the same directory share the pool.
+Pool state lives in `~/.sub-claude/pools/<project-hash>/`. One pool per project directory (git root, or `$PWD` outside git). All Claude instances in the same directory share the pool.
 
 > **Pool init and resize run `claude` to create new slots.** This may cause any currently-running Bash tool calls from other Claude sessions in this directory to lose output. Plan init before work starts or during idle periods.
 
@@ -259,10 +259,10 @@ Pool state lives in `~/.claude-pool/pools/<project-hash>/`. One pool per project
 Use `followup` instead of `input`/`key`/`attach`. `followup` handles resume automatically. Pin only if you need interactive key sequences.
 
 **`error: session a1b2c3d4 is still processing — use 'wait' or 'capture'`**
-Session hasn't finished. Run `claude-pool wait "$id"` first, then `followup` or `result`.
+Session hasn't finished. Run `sub-claude wait "$id"` first, then `followup` or `result`.
 
 **`error: session a1b2c3d4 is queued — not yet running`**
-All slots are busy. `wait "$id"` and it will run when a slot frees up. Or `claude-pool pool resize N` for more capacity.
+All slots are busy. `wait "$id"` and it will run when a slot frees up. Or `sub-claude pool resize N` for more capacity.
 
 **`warning: Stop hook did not fire — completed via idle fallback (30s)`**
 The Stop hook (`check-improvements.sh`) isn't configured in `settings.json`, or it failed before calling `pool_done()`. Completion detection fell back to a 30-second idle timer (only triggers if the session's raw.log actually grew, indicating work was performed). Verify `check-improvements.sh` is in the Stop hook (it handles the done signal internally).
@@ -271,13 +271,13 @@ The Stop hook (`check-improvements.sh`) isn't configured in `settings.json`, or 
 A descendant is still running. Either `stop e5f6a7b8` first, or use `clean "$id" --force-all` to stop everything depth-first.
 
 **`warning: high queue pressure — not blocking`**
-`--block` returned early. Use `claude-pool wait "$id"` to block explicitly. Resize pool if this happens frequently.
+`--block` returned early. Use `sub-claude wait "$id"` to block explicitly. Resize pool if this happens frequently.
 
 **Session shows `error` status (slot crashed)**
 The Claude process in that slot died. Clean the session and retry:
 ```bash
-claude-pool clean "$id"
-id2=$(claude-pool start "retry the task")
+sub-claude clean "$id"
+id2=$(sub-claude start "retry the task")
 ```
 The pool watcher recovers crashed slots automatically after a threshold is reached.
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC2030,SC2031,SC2329
-# Unit tests for config/lib/claude-pool/core.sh
+# Unit tests for config/lib/sub-claude/core.sh
 
 load '../helpers/setup'
 load '../helpers/mocks'
@@ -93,12 +93,12 @@ teardown() { _common_teardown; }
   resolve_pool_dir
   [ -n "$POOL_DIR" ]
   [ -n "$TMUX_SOCKET" ]
-  [[ "$TMUX_SOCKET" == claude-pool-* ]]
+  [[ "$TMUX_SOCKET" == sub-claude-* ]]
 }
 
 @test "resolve_pool_dir TMUX_SOCKET contains 8-char hex hash" {
   resolve_pool_dir
-  local hash="${TMUX_SOCKET#claude-pool-}"
+  local hash="${TMUX_SOCKET#sub-claude-}"
   [ "${#hash}" -eq 8 ]
   [[ "$hash" =~ ^[0-9a-f]{8}$ ]]
 }
@@ -270,7 +270,7 @@ teardown() { _common_teardown; }
   depth=$(derive_depth)
   # Must be a non-negative integer within the max depth limit
   [[ "$depth" =~ ^[0-9]+$ ]]
-  [ "$depth" -lt "$CLAUDE_POOL_MAX_DEPTH" ]
+  [ "$depth" -lt "$SUB_CLAUDE_MAX_DEPTH" ]
 }
 
 @test "derive_depth rejects depth exceeding pool_size - 1" {
@@ -306,8 +306,8 @@ teardown() { _common_teardown; }
   [ "$depth" -eq 1 ]
 }
 
-@test "derive_depth uses pool_size limit when smaller than CLAUDE_POOL_MAX_DEPTH" {
-  # Pool of size 3 with CLAUDE_POOL_MAX_DEPTH=5:
+@test "derive_depth uses pool_size limit when smaller than SUB_CLAUDE_MAX_DEPTH" {
+  # Pool of size 3 with SUB_CLAUDE_MAX_DEPTH=5:
   # effective max = min(5, 3-1) = 2. Depth 2 should be rejected.
   jq -n '{version:1, pool_size:3, slots:[], pins:{}}' | update_pool_json
 

@@ -1,4 +1,4 @@
-# claude-pool — Implementation Plan
+# sub-claude — Implementation Plan
 
 ## The Problem
 
@@ -13,9 +13,9 @@ This means:
 
 ## Goal
 
-Build `claude-pool` from scratch — a **session-oriented pool** backed by persistent tmux slots running interactive Claude TUIs. Callers work with 8-char hex **job IDs** — slot management, offloading, queueing, and resume are fully transparent. Multiple Claudes in the same directory share one pool.
+Build `sub-claude` from scratch — a **session-oriented pool** backed by persistent tmux slots running interactive Claude TUIs. Callers work with 8-char hex **job IDs** — slot management, offloading, queueing, and resume are fully transparent. Multiple Claudes in the same directory share one pool.
 
-> `claude-spawn` and the old `claude-tty` were legacy tools used as inspiration. `claude-pool` is now the primary tool for parallel Claude work.
+> `claude-spawn` and the old `claude-tty` were legacy tools used as inspiration. `sub-claude` is now the primary tool for parallel Claude work.
 
 **Guiding principle: fail gracefully, but loudly.**
 
@@ -28,7 +28,7 @@ Build `claude-pool` from scratch — a **session-oriented pool** backed by persi
                │                       │
                ▼                       ▼
        ┌──────────────────────────────────────────┐
-       │          claude-pool orchestrator          │
+       │          sub-claude orchestrator          │
        │                                          │
        │  Queue (FIFO): [job-3, job-4, ...]       │
        │                                          │
@@ -44,14 +44,14 @@ Build `claude-pool` from scratch — a **session-oriented pool** backed by persi
          ┌───────────────┴───────────────┐
          ▼                               ▼
   Background watcher            Shared tmux server:
-  (polls every 2s)              claude-pool-<project-hash>
+  (polls every 2s)              sub-claude-<project-hash>
   • done files → idle           ├── slot-0  (busy, a1b2c3d4)
   • queue dispatch              ├── slot-1  (idle, e5f6a7b8)
   • crash detection             ├── slot-2  (fresh)
   • pin expiry                  ├── slot-3  (fresh)
                                 └── slot-4  (fresh)
 
-State: ~/.claude-pool/pools/<project-hash>/
+State: ~/.sub-claude/pools/<project-hash>/
 ├── pool.json           # sessions, slot mappings, queue, pins
 ├── pool.lock           # global lock for pool.json mutations
 ├── pool.log            # watcher + orchestrator activity log
@@ -85,7 +85,7 @@ State: ~/.claude-pool/pools/<project-hash>/
 | **Job ID** | 8-char hex | Callers (models) | `a1b2c3d4` |
 | **Claude UUID** | Standard UUID | Orchestrator internally (for `/resume`) | `550e8400-e29b-41d4-a716-446655440000` |
 
-Job IDs are what callers see in `start`, `followup`, `list`, etc. Claude UUIDs are extracted via `/status` and stored in metadata for `/resume`. For debugging, `claude-pool uuid <id>` prints full internal state:
+Job IDs are what callers see in `start`, `followup`, `list`, etc. Claude UUIDs are extracted via `/status` and stored in metadata for `/resume`. For debugging, `sub-claude uuid <id>` prints full internal state:
 ```
 claude-uuid: 550e8400-e29b-41d4-a716-446655440000 | slot: 2 | status: idle
 ```
@@ -93,7 +93,7 @@ claude-uuid: 550e8400-e29b-41d4-a716-446655440000 | slot: 2 | status: idle
 **Dependencies:** `tmux`, `jq`, `bash` ≥ 4.x, `perl` (for locking on macOS)
 
 **Infrastructure:**
-- **One tmux server per project** — socket `claude-pool-<hash>`. Project dir = git root (`git rev-parse --show-toplevel`), falls back to `$PWD` outside git. Hash = first 8 chars via:
+- **One tmux server per project** — socket `sub-claude-<hash>`. Project dir = git root (`git rev-parse --show-toplevel`), falls back to `$PWD` outside git. Hash = first 8 chars via:
   ```bash
   project_hash() { printf '%s' "$1" | (md5 -q 2>/dev/null || md5sum | cut -d' ' -f1) | head -c8; }
   ```
@@ -108,31 +108,31 @@ claude-uuid: 550e8400-e29b-41d4-a716-446655440000 | slot: 2 | status: idle
 
 ```
 # Session commands
-claude-pool start "prompt" [--block]
-claude-pool followup <id> "prompt" [--block]
-claude-pool input <id> "message text"          # type text + Enter (raw terminal input)
-claude-pool key <id> Escape|Up|Down|Enter|...  # send special keys
-claude-pool capture <id>                       # live terminal or stored snapshot
-claude-pool result <id>                        # final output (errors if running)
-claude-pool wait [<id>] [--quiet]              # block until done
-claude-pool pin <id> [duration]                # prevent offloading (default: 120s)
-claude-pool unpin <id>                         # allow offloading again
-claude-pool status <id>                        # show session state
-claude-pool list [--tree | --all]              # show sessions
-claude-pool stop <id> | --tree | --all         # interrupt busy session(s) (Escape → idle)
-claude-pool cancel <id>                        # remove from queue (not-yet-running only)
-claude-pool clean <id> [--force | --force-all] # clean session + children → slots become fresh
-claude-pool clean --completed [--force | --force-all]  # clean completed children
-claude-pool clean --tree [--force | --force-all]       # clean all descendants
-claude-pool clean --all [--force | --force-all]        # clean everything (all callers)
+sub-claude start "prompt" [--block]
+sub-claude followup <id> "prompt" [--block]
+sub-claude input <id> "message text"          # type text + Enter (raw terminal input)
+sub-claude key <id> Escape|Up|Down|Enter|...  # send special keys
+sub-claude capture <id>                       # live terminal or stored snapshot
+sub-claude result <id>                        # final output (errors if running)
+sub-claude wait [<id>] [--quiet]              # block until done
+sub-claude pin <id> [duration]                # prevent offloading (default: 120s)
+sub-claude unpin <id>                         # allow offloading again
+sub-claude status <id>                        # show session state
+sub-claude list [--tree | --all]              # show sessions
+sub-claude stop <id> | --tree | --all         # interrupt busy session(s) (Escape → idle)
+sub-claude cancel <id>                        # remove from queue (not-yet-running only)
+sub-claude clean <id> [--force | --force-all] # clean session + children → slots become fresh
+sub-claude clean --completed [--force | --force-all]  # clean completed children
+sub-claude clean --tree [--force | --force-all]       # clean all descendants
+sub-claude clean --all [--force | --force-all]        # clean everything (all callers)
 
 # Debug / observe
-claude-pool attach <id>                        # attach to tmux pane (collaborative!)
-claude-pool uuid <id>                          # print Claude UUID, slot, status
-claude-pool pool init [--size N]               # start pool (default: 5)
-claude-pool pool stop                          # kill pool + tmux server
-claude-pool pool status                        # show slots, sessions, queue
-claude-pool pool resize N                      # add or remove slots dynamically
+sub-claude attach <id>                        # attach to tmux pane (collaborative!)
+sub-claude uuid <id>                          # print Claude UUID, slot, status
+sub-claude pool init [--size N]               # start pool (default: 5)
+sub-claude pool stop                          # kill pool + tmux server
+sub-claude pool status                        # show slots, sessions, queue
+sub-claude pool resize N                      # add or remove slots dynamically
 ```
 
 > ⚠️ **`--tree` and `--all`** affect sessions from ALL Claude instances in this directory.
@@ -167,7 +167,7 @@ Cleaned sessions don't appear in `list`.
 
 **`pool status`** — full pool overview:
 ```
-Pool: claude-pool-a1b2c3d4 (5 slots, watcher running)
+Pool: sub-claude-a1b2c3d4 (5 slots, watcher running)
 
 Slots:
   0  fresh
@@ -223,30 +223,30 @@ warning: session a1b2c3d4 is idle — input won't be tracked as a job. Use 'foll
 
 ```bash
 # Fire-and-forget
-id=$(claude-pool start "refactor auth module")
+id=$(sub-claude start "refactor auth module")
 
 # Blocking
-result=$(claude-pool start "explain this codebase" --block)
+result=$(sub-claude start "explain this codebase" --block)
 # ID is on stderr, result is on stdout
 
 # Multi-turn
-id=$(claude-pool start "remember: the password is banana")
-claude-pool wait "$id"
-claude-pool followup "$id" "what's the password?" --block
+id=$(sub-claude start "remember: the password is banana")
+sub-claude wait "$id"
+sub-claude followup "$id" "what's the password?" --block
 
 # Peek at running session
-id=$(claude-pool start "long refactor task")
+id=$(sub-claude start "long refactor task")
 sleep 30
-claude-pool capture "$id"   # see what it's doing right now
+sub-claude capture "$id"   # see what it's doing right now
 
 # Raw terminal interaction (even while busy)
-claude-pool key "$id" Escape            # interrupt a menu
-claude-pool input "$id" "some message"  # type into session
+sub-claude key "$id" Escape            # interrupt a menu
+sub-claude input "$id" "some message"  # type into session
 
 # Recursive: Claude A starts Claude B via same pool
-id_b=$(claude-pool start "help me with tests")
-claude-pool wait "$id_b"
-claude-pool followup "$id_b" "now fix the failures" --block
+id_b=$(sub-claude start "help me with tests")
+sub-claude wait "$id_b"
+sub-claude followup "$id_b" "now fix the failures" --block
 ```
 
 ## States
@@ -286,7 +286,7 @@ queued → processing → finished (idle) → finished (offloaded)
 {
   "version": 1,
   "project_dir": "/path/to/project",
-  "tmux_socket": "claude-pool-a1b2c3d4",
+  "tmux_socket": "sub-claude-a1b2c3d4",
   "pool_size": 5,
   "created_at": "2026-03-01T10:00:00Z",
   "slots": [
@@ -410,14 +410,14 @@ When queue length ≥ half pool size:
 - **`start --block`** returns ID + warning immediately (does NOT block):
   ```
   warning: high queue pressure (3 queued, pool size 5) — not blocking
-  hint: expand pool with 'claude-pool pool resize N' or wait explicitly with 'claude-pool wait <id> --quiet'
+  hint: expand pool with 'sub-claude pool resize N' or wait explicitly with 'sub-claude wait <id> --quiet'
   ```
 - **`wait <id>`** prints same warning but still blocks
 - **`wait <id> --quiet`** suppresses warnings, blocks silently
 
 ### Cancellation
 
-`claude-pool cancel <id>` removes a queued (not yet running) job. Errors if already running (use `stop`).
+`sub-claude cancel <id>` removes a queued (not yet running) job. Errors if already running (use `stop`).
 
 ## Completion Detection
 
@@ -431,16 +431,16 @@ A shared hook script fires the done sentinel **whenever user input is needed** �
 - **PreToolUse ExitPlanMode** — Claude proposed a plan (waiting for approval)
 - **PreToolUse AskUserQuestion** — Claude asked a question (waiting for answer)
 
-1. Pool init exports `CLAUDE_POOL_DONE_FILE=$slot_dir/done` in the per-slot wrapper script (before launching `claude`)
+1. Pool init exports `SUB_CLAUDE_DONE_FILE=$slot_dir/done` in the per-slot wrapper script (before launching `claude`)
 2. Hook checks env var, touches the file
 3. `wait`/`--block` polls for sentinel
 4. Sentinel `rm`'d before each new prompt
 
-**Hook script** (`config/claude/hooks/claude-pool-done.sh`):
+**Hook script** (`config/claude/hooks/sub-claude-done.sh`):
 ```bash
 #!/usr/bin/env bash
-# Signal "waiting for input" to claude-pool. No-op outside pool sessions.
-[ -n "$CLAUDE_POOL_DONE_FILE" ] && touch "$CLAUDE_POOL_DONE_FILE"
+# Signal "waiting for input" to sub-claude. No-op outside pool sessions.
+[ -n "$SUB_CLAUDE_DONE_FILE" ] && touch "$SUB_CLAUDE_DONE_FILE"
 ```
 
 **settings.json additions** (done signal fires on Stop via `check-improvements.sh` and on PreToolUse via standalone script):
@@ -468,7 +468,7 @@ A shared hook script fires the done sentinel **whenever user input is needed** �
       "hooks": [
         {
           "type": "command",
-          "command": "bash ~/.claude/hooks/claude-pool-done.sh",
+          "command": "bash ~/.claude/hooks/sub-claude-done.sh",
           "async": true
         }
       ]
@@ -484,7 +484,7 @@ A shared hook script fires the done sentinel **whenever user input is needed** �
 If Stop hook doesn't fire, 30s of no output growth triggers fallback. **Always warns:**
 ```
 warning: Stop hook did not fire — completed via idle fallback (30s)
-warning: check that claude-pool-done.sh hook is configured in settings.json
+warning: check that sub-claude-done.sh hook is configured in settings.json
 ```
 
 ```bash
@@ -524,7 +524,7 @@ wait_for_done() {
 
   if $used_fallback; then
     echo "warning: Stop hook did not fire — completed via idle fallback (${IDLE_FALLBACK}s)" >&2
-    echo "warning: check that claude-pool-done.sh hook is configured in settings.json" >&2
+    echo "warning: check that sub-claude-done.sh hook is configured in settings.json" >&2
     return 0
   fi
 
@@ -573,9 +573,9 @@ get_parent_session_id() {
 Prevents a session's slot from being offloaded — for heavy interactive workflows (menus, shortcuts, multi-step key sequences) where offloading mid-interaction would lose state.
 
 ```bash
-claude-pool pin "$id"       # default: 120 seconds
-claude-pool pin "$id" 300   # 5 minutes
-claude-pool unpin "$id"     # allow offloading again
+sub-claude pin "$id"       # default: 120 seconds
+sub-claude pin "$id" 300   # 5 minutes
+sub-claude unpin "$id"     # allow offloading again
 ```
 
 **Always prints warning:**
@@ -591,9 +591,9 @@ Pinned sessions are skipped during LRU offloading. If all idle slots are pinned,
 Sends Escape to running (busy) sessions to interrupt processing. Sessions become idle — still loaded in their slots, conversations preserved.
 
 ```bash
-claude-pool stop <id>           # interrupt this session
-claude-pool stop --tree         # interrupt all busy descendants
-claude-pool stop --all          # interrupt all busy sessions (all callers)
+sub-claude stop <id>           # interrupt this session
+sub-claude stop --tree         # interrupt all busy descendants
+sub-claude stop --all          # interrupt all busy sessions (all callers)
 ```
 
 > ⚠️ `--tree` and `--all` affect sessions from other Claude instances. Use sparingly.
@@ -607,14 +607,14 @@ Cleans sessions: offloads them if loaded, runs the clearing flow (→ slot becom
 ### Default behavior
 
 ```bash
-claude-pool clean <id>                  # clean this session + all its children
-claude-pool clean --completed           # clean all completed (idle/offloaded) direct children + their children
+sub-claude clean <id>                  # clean this session + all its children
+sub-claude clean --completed           # clean all completed (idle/offloaded) direct children + their children
 ```
 
 **By default, `clean` refuses if any target session or its descendants are busy:**
 ```
 error: cannot clean a1b2c3d4 — child e5f6a7b8 is still processing
-hint: stop it first with 'claude-pool stop e5f6a7b8', or use --force
+hint: stop it first with 'sub-claude stop e5f6a7b8', or use --force
 ```
 
 ### Force flags
@@ -626,10 +626,10 @@ hint: stop it first with 'claude-pool stop e5f6a7b8', or use --force
 | `--force-all` | Stops everything depth-first — descendants first, then targets. Nuclear option. |
 
 ```bash
-claude-pool clean "$id" --force         # stop this session if busy, clean it
+sub-claude clean "$id" --force         # stop this session if busy, clean it
                                        # but error if its children are busy
 
-claude-pool clean "$id" --force-all     # stop + clean everything depth-first
+sub-claude clean "$id" --force-all     # stop + clean everything depth-first
 ```
 
 ### Scope flags
@@ -683,7 +683,7 @@ If no pool exists when `start` is called:
 3. Return the job ID to stdout **immediately**
 4. Launch `pool init` as a **detached background process** (survives parent death):
    ```bash
-   ( exec </dev/null >/dev/null 2>&1; claude-pool pool init ) &
+   ( exec </dev/null >/dev/null 2>&1; sub-claude pool init ) &
    disown
    ```
 5. **Do NOT launch `claude` in panes until after returning** — launching `claude` while this Bash call is in flight would cause it to return no output. The detach + disown ensures the `start` call returns before `claude` processes start.
@@ -693,7 +693,7 @@ If no pool exists when `start` is called:
 
 ## Pool Resize
 
-`claude-pool pool resize N`:
+`sub-claude pool resize N`:
 
 - **Growing (N > current)**: add new tmux panes, launch Claude in them. ⚠️ Runs `claude` — may cause running Bash tool calls in this directory to lose output.
 - **Shrinking (N < current)**: mark excess slots for decommission (`decommissioning` status), offload sessions as they become idle — never kill busy slots
@@ -838,9 +838,9 @@ Each slot gets a wrapper script that exports env vars before launching Claude:
 ```bash
 # slots/N/run.sh (generated by pool init)
 #!/usr/bin/env bash
-export CLAUDE_POOL=1
-export CLAUDE_POOL_SLOT=N
-export CLAUDE_POOL_DONE_FILE="$POOL_DIR/slots/N/done"
+export SUB_CLAUDE=1
+export SUB_CLAUDE_SLOT=N
+export SUB_CLAUDE_DONE_FILE="$POOL_DIR/slots/N/done"
 export CLAUDE_BELL_OFF=1
 cd "$PROJECT_DIR"
 claude --dangerously-skip-permissions
@@ -876,14 +876,14 @@ Pool sessions receive these automatically:
 
 | Variable | Purpose |
 |----------|---------|
-| `CLAUDE_POOL=1` | Signals pool session context |
-| `CLAUDE_POOL_SLOT=<N>` | Slot index this session runs in |
-| `CLAUDE_POOL_DONE_FILE=<path>` | Done sentinel hook writes this file |
+| `SUB_CLAUDE=1` | Signals pool session context |
+| `SUB_CLAUDE_SLOT=<N>` | Slot index this session runs in |
+| `SUB_CLAUDE_DONE_FILE=<path>` | Done sentinel hook writes this file |
 | `CLAUDE_BELL_OFF=1` | Suppress notification bell in hooks |
 
 ## Recursion Depth Limit
 
-Maximum recursion depth: **`min(CLAUDE_POOL_MAX_DEPTH, pool_size - 1)`** (at least 1). This ensures at least one slot stays free, preventing deadlock from recursive session chains exhausting the pool. Tracked per-job in `meta.json` (`"depth": N`), **not** via env vars (pool slots are persistent — their env can't change per-job).
+Maximum recursion depth: **`min(SUB_CLAUDE_MAX_DEPTH, pool_size - 1)`** (at least 1). This ensures at least one slot stays free, preventing deadlock from recursive session chains exhausting the pool. Tracked per-job in `meta.json` (`"depth": N`), **not** via env vars (pool slots are persistent — their env can't change per-job).
 
 | pool_size | effective max depth | free slots |
 |-----------|-------------------|------------|
@@ -906,18 +906,18 @@ Built from scratch — not adapting existing `claude-tty` or `claude-spawn`.
 
 ```
 config/
-├── bin/claude-pool                    # thin dispatcher (~60 lines) — sources lib, routes subcommands
-├── lib/claude-pool/
+├── bin/sub-claude                    # thin dispatcher (~60 lines) — sources lib, routes subcommands
+├── lib/sub-claude/
 │   ├── core.sh                        # helpers, locking, IDs, session isolation, logging, env
 │   ├── pool.sh                        # init, stop, status, resize, watcher loop
 │   ├── session.sh                     # start, followup, stop, clean, cancel, wait
 │   ├── queue.sh                       # FIFO enqueue/dequeue, dispatch, pressure detection
 │   ├── offload.sh                     # offload, resume, snapshot, UUID extraction
 │   └── tmux.sh                        # send-keys, capture-pane, trust prompt, slot mgmt
-├── claude/hooks/claude-pool-done.sh   # Stop hook sentinel
-├── claude/skills/claude-pool/SKILL.md # skill documentation
+├── claude/hooks/sub-claude-done.sh   # Stop hook sentinel
+├── claude/skills/sub-claude/SKILL.md # skill documentation
 
-tests/claude-pool/
+tests/sub-claude/
 ├── run.sh                             # test runner (runs all bats files)
 ├── helpers/
 │   ├── setup.bash                     # shared fixtures, pool init/teardown
@@ -937,13 +937,13 @@ tests/claude-pool/
 ```
 
 **Deploy targets** (`deploy.sh` additions):
-- `config/bin/claude-pool` → `~/.local/bin/claude-pool`
-- `config/lib/claude-pool/*.sh` → `~/.local/lib/claude-pool/*.sh`
+- `config/bin/sub-claude` → `~/.local/bin/sub-claude`
+- `config/lib/sub-claude/*.sh` → `~/.local/lib/sub-claude/*.sh`
 
 **Lib resolution** in dispatcher:
 ```bash
-CLAUDE_POOL_LIB="${BASH_SOURCE%/*}/../lib/claude-pool"
-for f in "$CLAUDE_POOL_LIB"/*.sh; do source "$f"; done
+SUB_CLAUDE_LIB="${BASH_SOURCE%/*}/../lib/sub-claude"
+for f in "$SUB_CLAUDE_LIB"/*.sh; do source "$f"; done
 ```
 
 ## Files to Modify
@@ -951,7 +951,7 @@ for f in "$CLAUDE_POOL_LIB"/*.sh; do source "$f"; done
 | File | Action |
 |------|--------|
 | `config/claude/settings.json` | **Update** — add Stop hook entry |
-| `config/claude/skills/claude-spawn/SKILL.md` | **Update** — remove claude-pool section, cross-reference |
+| `config/claude/skills/claude-spawn/SKILL.md` | **Update** — remove sub-claude section, cross-reference |
 | `deploy.sh` | **Update** — add lib/ deploy target |
 
 ## Development Methodology
@@ -964,7 +964,7 @@ for f in "$CLAUDE_POOL_LIB"/*.sh; do source "$f"; done
 
 ### Implementation Order
 
-1. **Stop hook** — `claude-pool-done.sh` + settings.json entry
+1. **Stop hook** — `sub-claude-done.sh` + settings.json entry
 2. **Core lib** (`core.sh`) — helpers, locking, IDs, session isolation, logging, depth derivation
 3. **Tmux lib** (`tmux.sh`) — send-keys, capture-pane, trust prompt, slot management
 4. **State lib** (part of `core.sh`) — pool.json mutations, slot allocation
@@ -991,15 +991,15 @@ Work silently through failures, debugging, and iteration. The user expects you t
 
 1. **`shellcheck`** all `.sh` files — clean, no warnings
 2. **`bash -n`** all `.sh` files — syntax OK
-3. **Unit tests** — `bats tests/claude-pool/unit/`
-4. **Integration tests** — `bats tests/claude-pool/integration/` (real Claude sessions, pool size 2)
+3. **Unit tests** — `bats tests/sub-claude/unit/`
+4. **Integration tests** — `bats tests/sub-claude/integration/` (real Claude sessions, pool size 2)
 5. **Code review agent** — spawn a sub-agent to review all written code for quality, security, edge cases
 6. **Plan compliance agent** — spawn a sub-agent with the plan file path, ask it to verify every requirement in the plan is implemented and tested
-7. **Live verification** — use `claude-pool` yourself:
+7. **Live verification** — use `sub-claude` yourself:
    - Init a pool, start a session, wait for result
    - Start a second session, verify parallel execution
    - Followup on a completed session
-   - Start a Claude instance and ask it to use `claude-pool` to spawn a sub-Claude (recursive test)
+   - Start a Claude instance and ask it to use `sub-claude` to spawn a sub-Claude (recursive test)
    - Verify session isolation (children only see their own jobs)
    - Verify offloading works (fill pool, check snapshots)
 8. **`deploy.sh`** — deploys correctly, commands work from `~/.local/bin/`

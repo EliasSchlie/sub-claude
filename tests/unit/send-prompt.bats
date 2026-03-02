@@ -8,19 +8,19 @@
 #   3. Verification loop exits early when pane content changes
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-LIB_DIR="$REPO_ROOT/lib/claude-pool"
+LIB_DIR="$REPO_ROOT/lib/sub-claude"
 
 setup() {
   export TEST_DIR
   TEST_DIR="$(mktemp -d)"
   export POOL_DIR="$TEST_DIR/pool"
-  export TMUX_SOCKET="test-claude-pool-$$"
+  export TMUX_SOCKET="test-sub-claude-$$"
   mkdir -p "$POOL_DIR/slots/0" "$POOL_DIR/jobs" "$POOL_DIR/queue"
 
   # Source core + tmux libs (we need the real send_prompt)
-  # shellcheck source=../../lib/claude-pool/core.sh
+  # shellcheck source=../../lib/sub-claude/core.sh
   source "$LIB_DIR/core.sh"
-  # shellcheck source=../../lib/claude-pool/tmux.sh
+  # shellcheck source=../../lib/sub-claude/tmux.sh
   source "$LIB_DIR/tmux.sh"
 
   # Track tmux_cmd calls

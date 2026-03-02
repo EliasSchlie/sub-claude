@@ -8,7 +8,7 @@
 # to capture-pane (no scrollback in alternate screen mode).
 #
 # Environment:
-#   CLAUDE_POOL_DONE_FILE  — sentinel file to touch on "completion"
+#   SUB_CLAUDE_DONE_FILE  — sentinel file to touch on "completion"
 #   MOCK_CLAUDE_DELAY      — seconds to sleep before "completing" (default: 0)
 #   MOCK_TUI_LINES         — number of output lines to generate (default: 200)
 
@@ -121,8 +121,8 @@ while IFS= read -r line; do
       echo "  [task completed]"
       echo ""
 
-      if [ -n "${CLAUDE_POOL_DONE_FILE:-}" ]; then
-        touch "$CLAUDE_POOL_DONE_FILE"
+      if [ -n "${SUB_CLAUDE_DONE_FILE:-}" ]; then
+        touch "$SUB_CLAUDE_DONE_FILE"
       fi
 
       printf '> '

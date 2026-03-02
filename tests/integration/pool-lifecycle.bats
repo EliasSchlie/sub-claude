@@ -190,8 +190,8 @@ teardown() { _integ_teardown; }
   # Check the generated run.sh contains expected exports
   local wrapper="$POOL_DIR/slots/0/run.sh"
   [[ -f "$wrapper" ]]
-  grep -q "CLAUDE_POOL=1" "$wrapper"
-  grep -q "CLAUDE_POOL_SLOT=0" "$wrapper"
-  grep -q "CLAUDE_POOL_DONE_FILE=" "$wrapper"
+  grep -q "SUB_CLAUDE=1" "$wrapper"
+  grep -q "SUB_CLAUDE_SLOT=0" "$wrapper"
+  grep -q "SUB_CLAUDE_DONE_FILE=" "$wrapper"
   grep -q "CLAUDE_BELL_OFF=1" "$wrapper"
 }

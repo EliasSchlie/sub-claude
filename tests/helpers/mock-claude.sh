@@ -5,10 +5,10 @@
 #   - /status → prints a UUID
 #   - /clear → resets session with new UUID
 #   - /resume <uuid> → switches to that session UUID
-#   - Any other text → "processes" it, touches CLAUDE_POOL_DONE_FILE
+#   - Any other text → "processes" it, touches SUB_CLAUDE_DONE_FILE
 #
 # Environment:
-#   CLAUDE_POOL_DONE_FILE  — sentinel file to touch on "completion"
+#   SUB_CLAUDE_DONE_FILE  — sentinel file to touch on "completion"
 #   MOCK_CLAUDE_DELAY      — seconds to sleep before "completing" (default: 0)
 #   MOCK_CLAUDE_FAIL       — if set, exit with this code after first prompt
 #   MOCK_CLAUDE_JSONL_DIR  — if set, write JSONL transcripts to this directory
@@ -122,8 +122,8 @@ while IFS= read -r line; do
       fi
 
       # Signal completion via done file
-      if [ -n "${CLAUDE_POOL_DONE_FILE:-}" ]; then
-        touch "$CLAUDE_POOL_DONE_FILE"
+      if [ -n "${SUB_CLAUDE_DONE_FILE:-}" ]; then
+        touch "$SUB_CLAUDE_DONE_FILE"
       fi
 
       printf '> '

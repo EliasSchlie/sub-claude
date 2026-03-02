@@ -1,4 +1,4 @@
-# Live test setup for claude-pool.
+# Live test setup for sub-claude.
 # Uses REAL claude binary — no mocking. Each test burns actual tokens.
 # Each test gets an isolated temporary project directory and pool.
 #
@@ -11,7 +11,7 @@
 #   - jq installed
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-LIB_DIR="$REPO_ROOT/lib/claude-pool"
+LIB_DIR="$REPO_ROOT/lib/sub-claude"
 
 # Timeouts (real Claude is slower than mocks)
 LIVE_TIMEOUT=120
@@ -38,17 +38,17 @@ _live_setup() {
   mkdir -p "$POOL_DIR/slots" "$POOL_DIR/jobs" "$POOL_DIR/queue"
 
   # Source all libs in dependency order
-  # shellcheck source=../../lib/claude-pool/core.sh
+  # shellcheck source=../../lib/sub-claude/core.sh
   source "$LIB_DIR/core.sh"
-  # shellcheck source=../../lib/claude-pool/tmux.sh
+  # shellcheck source=../../lib/sub-claude/tmux.sh
   source "$LIB_DIR/tmux.sh"
-  # shellcheck source=../../lib/claude-pool/offload.sh
+  # shellcheck source=../../lib/sub-claude/offload.sh
   source "$LIB_DIR/offload.sh"
-  # shellcheck source=../../lib/claude-pool/queue.sh
+  # shellcheck source=../../lib/sub-claude/queue.sh
   source "$LIB_DIR/queue.sh"
-  # shellcheck source=../../lib/claude-pool/pool.sh
+  # shellcheck source=../../lib/sub-claude/pool.sh
   source "$LIB_DIR/pool.sh"
-  # shellcheck source=../../lib/claude-pool/session.sh
+  # shellcheck source=../../lib/sub-claude/session.sh
   source "$LIB_DIR/session.sh"
 
   # Override get_project_dir to use our isolated test project

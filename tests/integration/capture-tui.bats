@@ -21,9 +21,9 @@ setup() {
     mkdir -p "$slot_dir"
     cat > "$slot_dir/run.sh" <<RUNEOF
 #!/usr/bin/env bash
-export CLAUDE_POOL=1
-export CLAUDE_POOL_SLOT=$slot
-export CLAUDE_POOL_DONE_FILE="$slot_dir/done"
+export SUB_CLAUDE=1
+export SUB_CLAUDE_SLOT=$slot
+export SUB_CLAUDE_DONE_FILE="$slot_dir/done"
 export CLAUDE_BELL_OFF=1
 export MOCK_TUI_LINES=200
 cd $(printf '%q' "$project_dir")

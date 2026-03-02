@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run live (end-to-end) tests for claude-pool.
+# Run live (end-to-end) tests for sub-claude.
 #
 # WARNING: These tests start real Claude sessions and consume API tokens.
 # Each test creates an isolated temporary directory, so they won't interfere

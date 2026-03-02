@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # claude-output/parse.sh — Parse Claude TUI terminal output into sections
 #
-# Standalone library. No dependencies on claude-pool internals.
+# Standalone library. No dependencies on sub-claude internals.
 # Source this file, then call claude_output_parse.
 #
 # Usage:

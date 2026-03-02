@@ -33,7 +33,7 @@ Options:
 
 Installs:
   <prefix>/bin/sub-claude           CLI binary
-  <prefix>/lib/claude-pool/         Pool library
+  <prefix>/lib/sub-claude/         Pool library
   <prefix>/lib/claude-output/       Output parser library
   ~/.claude/hooks/sub-claude-done.sh  Stop hook (optional)
 EOF
@@ -48,7 +48,7 @@ LIB_DIR="$PREFIX/lib"
 if $UNINSTALL; then
   echo "Uninstalling sub-claude..."
   rm -f "$BIN_DIR/sub-claude"
-  rm -rf "$LIB_DIR/claude-pool"
+  rm -rf "$LIB_DIR/sub-claude"
   rm -rf "$LIB_DIR/claude-output"
   rm -f "$HOME/.claude/hooks/sub-claude-done.sh"
   echo "Done."
@@ -58,18 +58,18 @@ fi
 echo "Installing sub-claude to $PREFIX..."
 
 # Create directories
-mkdir -p "$BIN_DIR" "$LIB_DIR/claude-pool" "$LIB_DIR/claude-output"
+mkdir -p "$BIN_DIR" "$LIB_DIR/sub-claude" "$LIB_DIR/claude-output"
 
 # Install binary
 cp "$SCRIPT_DIR/bin/sub-claude" "$BIN_DIR/sub-claude"
 chmod +x "$BIN_DIR/sub-claude"
 
 # Install libraries
-cp "$SCRIPT_DIR/lib/claude-pool/"*.sh "$LIB_DIR/claude-pool/"
+cp "$SCRIPT_DIR/lib/sub-claude/"*.sh "$LIB_DIR/sub-claude/"
 cp "$SCRIPT_DIR/lib/claude-output/"*.sh "$LIB_DIR/claude-output/"
 
 echo "  Installed binary:  $BIN_DIR/sub-claude"
-echo "  Installed libs:    $LIB_DIR/claude-pool/"
+echo "  Installed libs:    $LIB_DIR/sub-claude/"
 echo "                     $LIB_DIR/claude-output/"
 
 # Install stop hook (if ~/.claude/ exists)

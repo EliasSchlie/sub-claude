@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC2030,SC2031
-# Unit tests for config/lib/claude-pool/queue.sh
+# Unit tests for config/lib/sub-claude/queue.sh
 
 load '../helpers/setup'
 load '../helpers/mocks'

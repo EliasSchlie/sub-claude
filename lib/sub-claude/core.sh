@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # =============================================================================
-# claude-pool: core.sh — Foundational helpers library
+# sub-claude: core.sh — Foundational helpers library
 # =============================================================================
-# Sourced by all other claude-pool modules and the main dispatcher.
+# Sourced by all other sub-claude modules and the main dispatcher.
 # Do NOT add a shebang — this file is sourced, never executed directly.
 #
 # Provides:
@@ -22,9 +22,9 @@
 # ---------------------------------------------------------------------------
 
 # shellcheck disable=SC2034  # used by other modules that source this file
-CLAUDE_POOL_VERSION=1
-CLAUDE_POOL_MAX_DEPTH=5
-CLAUDE_POOL_STATE_DIR="$HOME/.claude-pool/pools"
+SUB_CLAUDE_VERSION=1
+SUB_CLAUDE_MAX_DEPTH=5
+SUB_CLAUDE_STATE_DIR="$HOME/.sub-claude/pools"
 
 # ---------------------------------------------------------------------------
 # Path / hash helpers
@@ -48,16 +48,16 @@ get_project_dir() {
 }
 
 # resolve_pool_dir() — set POOL_DIR and TMUX_SOCKET globals.
-# POOL_DIR = $CLAUDE_POOL_STATE_DIR/<hash-of-project-dir>
-# TMUX_SOCKET = claude-pool-<hash>
+# POOL_DIR = $SUB_CLAUDE_STATE_DIR/<hash-of-project-dir>
+# TMUX_SOCKET = sub-claude-<hash>
 #
 # Call once at startup; all other functions rely on POOL_DIR being set.
 resolve_pool_dir() {
   local project_dir hash
   project_dir=$(get_project_dir)
   hash=$(project_hash "$project_dir")
-  POOL_DIR="$CLAUDE_POOL_STATE_DIR/$hash"
-  TMUX_SOCKET="claude-pool-$hash"
+  POOL_DIR="$SUB_CLAUDE_STATE_DIR/$hash"
+  TMUX_SOCKET="sub-claude-$hash"
 }
 
 # ---------------------------------------------------------------------------
@@ -303,7 +303,7 @@ get_job_status() {
 #   2. Search pool metadata for an active job owned by that session
 #   3. New job depth = parent job depth + 1
 #   4. Standalone callers (no parent claude) → depth 0
-#   5. depth >= CLAUDE_POOL_MAX_DEPTH → die with an error
+#   5. depth >= SUB_CLAUDE_MAX_DEPTH → die with an error
 #
 # Prints the depth integer to stdout on success.
 derive_depth() {
@@ -335,7 +335,7 @@ derive_depth() {
   # Effective max depth: the lesser of the hard limit and pool_size - 1.
   # pool_size - 1 ensures at least one slot stays free, preventing deadlock
   # when a recursive chain consumes slots.
-  local effective_max="$CLAUDE_POOL_MAX_DEPTH"
+  local effective_max="$SUB_CLAUDE_MAX_DEPTH"
   local pool_size
   pool_size=$(read_pool_json | jq -r '.pool_size // 0' 2>/dev/null)
   if [ "$pool_size" -gt 0 ] && [ $(( pool_size - 1 )) -lt "$effective_max" ]; then
@@ -345,10 +345,10 @@ derive_depth() {
   [ "$effective_max" -lt 1 ] && effective_max=1
 
   if [ "$new_depth" -ge "$effective_max" ]; then
-    if [ "$effective_max" -lt "$CLAUDE_POOL_MAX_DEPTH" ]; then
+    if [ "$effective_max" -lt "$SUB_CLAUDE_MAX_DEPTH" ]; then
       die "maximum recursion depth ($effective_max) reached — pool size is $pool_size, at most $effective_max levels of nesting allowed to prevent deadlock"
     else
-      die "maximum recursion depth ($CLAUDE_POOL_MAX_DEPTH) reached"
+      die "maximum recursion depth ($SUB_CLAUDE_MAX_DEPTH) reached"
     fi
   fi
 
@@ -549,7 +549,7 @@ _locked_remove_slot() {
 # initialised for the current project directory.
 ensure_pool_exists() {
   if [ ! -f "$POOL_DIR/pool.json" ]; then
-    die "no pool found for this project — run 'claude-pool pool init' first"
+    die "no pool found for this project — run 'sub-claude pool init' first"
   fi
 }
 

@@ -1,8 +1,8 @@
-# claude-pool — Output Architecture
+# sub-claude — Output Architecture
 
 ## Overview
 
-claude-pool commands that return session output (`result`, `wait`, `start --block`, `followup --block`) use a two-stage dispatch:
+sub-claude commands that return session output (`result`, `wait`, `start --block`, `followup --block`) use a two-stage dispatch:
 
 1. **JSONL extraction** (default) — parse Claude Code's session transcript for the last assistant text response
 2. **Terminal capture** (fallback / `--terminal`) — capture the tmux pane or snapshot file
@@ -51,8 +51,8 @@ The library (`config/lib/claude-output/jsonl.sh`) provides two functions:
 ### `--terminal`
 
 Bypasses JSONL extraction entirely and uses terminal capture. Available as:
-- **Global option**: `claude-pool --terminal result <id>` — applies to all commands
-- **Per-command flag**: `claude-pool result <id> --terminal` — applies to that command only
+- **Global option**: `sub-claude --terminal result <id>` — applies to all commands
+- **Per-command flag**: `sub-claude result <id> --terminal` — applies to that command only
 
 Use when you need the full TUI output (tool call details, thinking blocks, system messages).
 
@@ -73,4 +73,4 @@ JSONL extraction naturally produces "response" level output (last assistant text
 |------|-----------|---------|
 | `config/lib/claude-output/jsonl.sh` | Nothing (standalone) | JSONL file lookup + response extraction |
 | `config/lib/claude-output/parse.sh` | Nothing (standalone) | Terminal output parsing by verbosity level |
-| `config/lib/claude-pool/session.sh` | Both above | `_emit_response`, `_emit_output` dispatch |
+| `config/lib/sub-claude/session.sh` | Both above | `_emit_response`, `_emit_output` dispatch |

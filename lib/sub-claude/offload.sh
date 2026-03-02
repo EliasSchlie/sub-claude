@@ -1,7 +1,7 @@
 # shellcheck shell=bash
-# offload.sh — offloading and resume logic for claude-pool
+# offload.sh — offloading and resume logic for sub-claude
 #
-# Sourced by the claude-pool dispatcher after core.sh and tmux.sh.
+# Sourced by the sub-claude dispatcher after core.sh and tmux.sh.
 # Assumes POOL_DIR and TMUX_SOCKET are set, and all helpers from core.sh
 # and tmux.sh are available.
 #

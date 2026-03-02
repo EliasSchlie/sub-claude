@@ -1,6 +1,6 @@
 # claude-spawn: Bash tool output bug (transcript collision)
 
-> **Historical context.** `claude-spawn` is superseded by [claude-pool](architecture.md), which avoids this bug entirely by pre-starting sessions in tmux panes instead of spawning new `claude` processes. This document is preserved as reference for the underlying Claude Code transcript collision issue, which still affects any workflow that launches `claude` from within an active session.
+> **Historical context.** `claude-spawn` is superseded by [sub-claude](architecture.md), which avoids this bug entirely by pre-starting sessions in tmux panes instead of spawning new `claude` processes. This document is preserved as reference for the underlying Claude Code transcript collision issue, which still affects any workflow that launches `claude` from within an active session.
 
 ## Problem
 

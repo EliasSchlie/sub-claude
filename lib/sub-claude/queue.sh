@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # =============================================================================
-# claude-pool: queue.sh — FIFO queue management
+# sub-claude: queue.sh — FIFO queue management
 # =============================================================================
 # Sourced after core.sh, tmux.sh, and offload.sh.
 # Do NOT add a shebang — this file is sourced, never executed directly.
@@ -148,7 +148,7 @@ queue_pressure() {
 
   if [ "$count" -ge "$threshold" ]; then
     warn "high queue pressure ($count queued, pool size $pool_size) — not blocking"
-    warn "hint: expand pool with 'claude-pool pool resize N' or wait explicitly with 'claude-pool wait <id> --quiet'"
+    warn "hint: expand pool with 'sub-claude pool resize N' or wait explicitly with 'sub-claude wait <id> --quiet'"
     return 0
   fi
 
@@ -270,7 +270,7 @@ cancel_job() {
   done
 
   if [ -z "$queue_file" ]; then
-    die "job $job_id is not in the queue — it may already be running (use 'claude-pool stop $job_id' instead)"
+    die "job $job_id is not in the queue — it may already be running (use 'sub-claude stop $job_id' instead)"
   fi
 
   # Remove the queue entry.

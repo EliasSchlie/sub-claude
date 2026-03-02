@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Live end-to-end tests for claude-pool.
+# Live end-to-end tests for sub-claude.
 # WARNING: These tests use real Claude sessions and consume API tokens.
 #
 # Only tests things that REQUIRE real Claude — trust prompt, done hook,

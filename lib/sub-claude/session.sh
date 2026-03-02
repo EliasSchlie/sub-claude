@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # =============================================================================
-# claude-pool: session.sh — Session-level CLI commands
+# sub-claude: session.sh — Session-level CLI commands
 # =============================================================================
 # Sourced after core.sh, tmux.sh, offload.sh, queue.sh, and pool.sh.
 # Do NOT add a shebang — this file is sourced, never executed directly.
@@ -14,11 +14,11 @@
 # Helpers (session-local)
 # ---------------------------------------------------------------------------
 
-# _emit_pane <slot> — capture pane output, filtered by CLAUDE_POOL_VERBOSITY.
+# _emit_pane <slot> — capture pane output, filtered by SUB_CLAUDE_VERBOSITY.
 _emit_pane() {
   local slot="$1"
-  if type claude_output_parse &>/dev/null && [ "${CLAUDE_POOL_VERBOSITY:-raw}" != "raw" ]; then
-    capture_pane "$slot" | claude_output_parse -v "$CLAUDE_POOL_VERBOSITY"
+  if type claude_output_parse &>/dev/null && [ "${SUB_CLAUDE_VERBOSITY:-raw}" != "raw" ]; then
+    capture_pane "$slot" | claude_output_parse -v "$SUB_CLAUDE_VERBOSITY"
   else
     capture_pane "$slot"
   fi
@@ -56,18 +56,18 @@ _emit_pane_full() {
   fi
 
   if [ -n "${output:-}" ]; then
-    if type claude_output_parse &>/dev/null && [ "${CLAUDE_POOL_VERBOSITY:-raw}" != "raw" ]; then
-      printf '%s\n' "$output" | claude_output_parse -v "$CLAUDE_POOL_VERBOSITY"
+    if type claude_output_parse &>/dev/null && [ "${SUB_CLAUDE_VERBOSITY:-raw}" != "raw" ]; then
+      printf '%s\n' "$output" | claude_output_parse -v "$SUB_CLAUDE_VERBOSITY"
     else
       printf '%s\n' "$output"
     fi
   fi
 }
 
-# _emit_file <path> — emit file contents, filtered by CLAUDE_POOL_VERBOSITY.
+# _emit_file <path> — emit file contents, filtered by SUB_CLAUDE_VERBOSITY.
 _emit_file() {
-  if type claude_output_parse &>/dev/null && [ "${CLAUDE_POOL_VERBOSITY:-raw}" != "raw" ]; then
-    claude_output_parse -v "$CLAUDE_POOL_VERBOSITY" < "$1"
+  if type claude_output_parse &>/dev/null && [ "${SUB_CLAUDE_VERBOSITY:-raw}" != "raw" ]; then
+    claude_output_parse -v "$SUB_CLAUDE_VERBOSITY" < "$1"
   else
     cat "$1"
   fi
@@ -104,7 +104,7 @@ _emit_response() {
 # Default: try JSONL response extraction, fall back to terminal capture.
 # With --terminal: use terminal capture directly (old behavior).
 _emit_output() {
-  local job_id="$1" slot="${2:-}" terminal="${3:-${CLAUDE_POOL_TERMINAL:-}}"
+  local job_id="$1" slot="${2:-}" terminal="${3:-${SUB_CLAUDE_TERMINAL:-}}"
 
   if [ "$terminal" = "--terminal" ]; then
     # Old behavior: terminal capture.
@@ -118,7 +118,7 @@ _emit_output() {
 
   # JSONL provides last-response only. For other verbosity modes (conversation,
   # full), fall through to terminal capture which supports all levels.
-  local v="${CLAUDE_POOL_VERBOSITY:-raw}"
+  local v="${SUB_CLAUDE_VERBOSITY:-raw}"
   if [ "$v" = "raw" ] || [ "$v" = "response" ]; then
     if _emit_response "$job_id"; then
       return 0
@@ -198,7 +198,7 @@ _auto_init_pool() {
   # Launch pool init as detached background (survives parent death).
   # exec </dev/null prevents stdin inheritance; output goes to /dev/null
   # so the claude binary launch doesn't disrupt current Bash tool output.
-  ( exec </dev/null >/dev/null 2>&1; claude-pool pool init ) & disown
+  ( exec </dev/null >/dev/null 2>&1; sub-claude pool init ) & disown
 
   return 0
 }
@@ -379,7 +379,7 @@ _dispatch_to_slot() {
 # cmd_start "$@"
 # ---------------------------------------------------------------------------
 cmd_start() {
-  local prompt="" block=false terminal="${CLAUDE_POOL_TERMINAL:-}"
+  local prompt="" block=false terminal="${SUB_CLAUDE_TERMINAL:-}"
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -406,7 +406,7 @@ cmd_start() {
   if ! _require_pool; then
     _auto_init_pool "$id" "$prompt"
     if $block; then
-      warn "auto-init in progress — --block degraded to non-blocking. Use 'claude-pool wait $id' after pool is ready."
+      warn "auto-init in progress — --block degraded to non-blocking. Use 'sub-claude wait $id' after pool is ready."
     fi
     return 0
   fi
@@ -529,7 +529,7 @@ cmd_start() {
 # cmd_followup "$@"
 # ---------------------------------------------------------------------------
 cmd_followup() {
-  local id="" prompt="" block=false terminal="${CLAUDE_POOL_TERMINAL:-}"
+  local id="" prompt="" block=false terminal="${SUB_CLAUDE_TERMINAL:-}"
 
   # First positional = id, second positional = prompt.
   local positionals=0
@@ -565,7 +565,7 @@ cmd_followup() {
       die "session $id is still processing — wait for it to finish first"
       ;;
     error)
-      die "session $id crashed — clean it first with 'claude-pool clean $id'"
+      die "session $id crashed — clean it first with 'sub-claude clean $id'"
       ;;
     "finished(idle)")
       # Direct send — slot is available.
@@ -793,7 +793,7 @@ cmd_capture() {
 # cmd_result "$@"
 # ---------------------------------------------------------------------------
 cmd_result() {
-  local id="" terminal="${CLAUDE_POOL_TERMINAL:-}"
+  local id="" terminal="${SUB_CLAUDE_TERMINAL:-}"
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -848,7 +848,7 @@ cmd_result() {
 # cmd_wait "$@"
 # ---------------------------------------------------------------------------
 cmd_wait() {
-  local id="" quiet=false terminal="${CLAUDE_POOL_TERMINAL:-}"
+  local id="" quiet=false terminal="${SUB_CLAUDE_TERMINAL:-}"
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -864,7 +864,7 @@ cmd_wait() {
   done
 
   # Export terminal flag so delegated cmd_result inherits it.
-  CLAUDE_POOL_TERMINAL="$terminal"
+  SUB_CLAUDE_TERMINAL="$terminal"
 
   ensure_pool_exists
 
@@ -1260,7 +1260,7 @@ $child"
         _stop_single_job "$target"
       else
         die "cannot clean $id — session $target is still processing
-hint: stop it first with 'claude-pool stop $target', or use --force"
+hint: stop it first with 'sub-claude stop $target', or use --force"
       fi
     fi
   done

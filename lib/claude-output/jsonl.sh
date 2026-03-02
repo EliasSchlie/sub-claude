@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # claude-output/jsonl.sh — Extract responses from Claude JSONL session transcripts
 #
-# Standalone library. No dependencies on claude-pool internals.
+# Standalone library. No dependencies on sub-claude internals.
 # Source this file, then call the public functions.
 #
 # Public API:

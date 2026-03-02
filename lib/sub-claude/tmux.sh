@@ -1,7 +1,7 @@
 # shellcheck shell=bash
-# tmux.sh — tmux operations layer for claude-pool
+# tmux.sh — tmux operations layer for sub-claude
 #
-# Sourced by the claude-pool dispatcher after core.sh.
+# Sourced by the sub-claude dispatcher after core.sh.
 # Assumes POOL_DIR and TMUX_SOCKET are set by core.sh.
 #
 # All tmux interactions go through this file. No other layer
@@ -338,7 +338,7 @@ create_slot_pane() {
 #
 # Arguments:
 #   slot        — slot index (integer)
-#   pool_dir    — pool state root (e.g. ~/.claude-pool/pools/<hash>)
+#   pool_dir    — pool state root (e.g. ~/.sub-claude/pools/<hash>)
 #   project_dir — project working directory to cd into
 write_slot_wrapper() {
   local slot="$1" pool_dir="$2" project_dir="$3"
@@ -349,9 +349,9 @@ write_slot_wrapper() {
   cat > "$slot_dir/run.sh" <<RUNEOF
 #!/usr/bin/env bash
 unset CLAUDECODE
-export CLAUDE_POOL=1
-export CLAUDE_POOL_SLOT=$slot
-export CLAUDE_POOL_DONE_FILE="$slot_dir/done"
+export SUB_CLAUDE=1
+export SUB_CLAUDE_SLOT=$slot
+export SUB_CLAUDE_DONE_FILE="$slot_dir/done"
 export CLAUDE_BELL_OFF=1
 cd $(printf '%q' "$project_dir")
 exec claude --dangerously-skip-permissions

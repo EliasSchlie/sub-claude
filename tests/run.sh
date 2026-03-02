@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run claude-pool tests.
+# Run sub-claude tests.
 # By default runs unit + integration tests (mocked, fast).
 # Use --live to also run live tests (real Claude, slow, costs tokens).
 set -euo pipefail

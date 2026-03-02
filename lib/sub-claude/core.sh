@@ -351,7 +351,7 @@ derive_depth() {
 
   if [ "$new_depth" -ge "$effective_max" ]; then
     if [ "$effective_max" -lt "$SUB_CLAUDE_MAX_DEPTH" ]; then
-      die "maximum recursion depth ($effective_max) reached — pool size is $pool_size, at most $effective_max levels of nesting allowed to prevent deadlock"
+      die "maximum recursion depth ($effective_max) reached — pool size is $pool_size, at most $effective_max levels of nesting allowed to prevent deadlock. Grow the pool with 'sub-claude pool resize N' to allow deeper nesting"
     else
       die "maximum recursion depth ($SUB_CLAUDE_MAX_DEPTH) reached"
     fi

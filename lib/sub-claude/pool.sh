@@ -19,11 +19,21 @@ pool_init() {
   _check_old_claude_pool
 
   local pool_size=5
+  local idle_timeout=1800  # 30 minutes default
+  local ttl=7200           # 2 hours default
 
   while [ $# -gt 0 ]; do
     case "$1" in
       --size)
         pool_size="$2"
+        shift 2
+        ;;
+      --idle-timeout)
+        idle_timeout="$2"
+        shift 2
+        ;;
+      --ttl)
+        ttl="$2"
         shift 2
         ;;
       *)
@@ -35,6 +45,16 @@ pool_init() {
   # Validate pool size
   case "$pool_size" in
     ''|*[!0-9]*|0) die "pool init: size must be a positive integer (got '$pool_size')" ;;
+  esac
+
+  # Validate idle_timeout (non-negative integer)
+  case "$idle_timeout" in
+    ''|*[!0-9]*) die "pool init: idle-timeout must be a non-negative integer (got '$idle_timeout')" ;;
+  esac
+
+  # Validate ttl (non-negative integer)
+  case "$ttl" in
+    ''|*[!0-9]*) die "pool init: ttl must be a non-negative integer (got '$ttl')" ;;
   esac
 
   # Check for existing pool
@@ -61,11 +81,17 @@ pool_init() {
   ]"
 
   # Write initial pool.json
+  local now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
   jq -n \
     --arg project_dir "$project_dir" \
     --arg tmux_socket "$TMUX_SOCKET" \
     --argjson pool_size "$pool_size" \
-    --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg created_at "$now" \
+    --argjson idle_timeout "$idle_timeout" \
+    --argjson ttl "$ttl" \
+    --arg last_dispatch_at "$now" \
     --argjson slots "$slots_json" \
     '{
       version: 1,
@@ -73,6 +99,9 @@ pool_init() {
       tmux_socket: $tmux_socket,
       pool_size: $pool_size,
       created_at: $created_at,
+      idle_timeout: $idle_timeout,
+      ttl: $ttl,
+      last_dispatch_at: $last_dispatch_at,
       queue_seq: 0,
       slots: $slots,
       pins: {}
@@ -440,6 +469,12 @@ watcher_loop() {
     # Phase 2c: clean up decommissioning slots (no lock for tmux ops)
     _watcher_cleanup_decommissioning
 
+    # Phase 2d: reap idle slots marked for offload (tmux I/O outside lock)
+    _watcher_reap_idle_slots
+
+    # Phase 3: TTL auto-shutdown — stop pool if no dispatches for > ttl seconds
+    _watcher_check_ttl
+
     sleep 2
   done
 }
@@ -472,6 +507,54 @@ _watcher_cleanup_decommissioning() {
 
     pool_log "watcher" "slot-$slot: decommissioned and removed"
   done
+}
+
+# _watcher_reap_idle_slots — offload slots marked "reaping" by phase1.
+# Runs OUTSIDE the lock (offload_to_new does tmux I/O).
+_watcher_reap_idle_slots() {
+  local pool_json
+  pool_json=$(read_pool_json)
+  local reap_slots
+  reap_slots=$(printf '%s' "$pool_json" | jq -r '.slots[] | select(.status == "reaping") | .index' 2>/dev/null)
+  [ -n "$reap_slots" ] || return 0
+
+  for slot in $reap_slots; do
+    # Re-verify slot is still "reaping" before expensive tmux I/O
+    local current_status
+    current_status=$(read_pool_json | jq -r --argjson idx "$slot" \
+      '.slots[] | select(.index == $idx) | .status')
+    [ "$current_status" = "reaping" ] || continue
+
+    pool_log "watcher" "slot-$slot: reaping idle slot"
+    offload_to_new "$slot" 2>>"$POOL_DIR/pool.log" || {
+      pool_log "watcher" "slot-$slot: reap offload failed, resetting to idle"
+      with_pool_lock _pool_set_slot_status "$slot" "idle"
+    }
+  done
+}
+
+# _watcher_check_ttl — auto-shutdown pool if no dispatches for > ttl seconds.
+_watcher_check_ttl() {
+  local pool_json ttl last_dispatch
+  pool_json=$(read_pool_json)
+  ttl=$(printf '%s' "$pool_json" | jq -r '.ttl // 0')
+
+  # ttl=0 means no auto-shutdown
+  [ "$ttl" -gt 0 ] 2>/dev/null || return 0
+
+  last_dispatch=$(printf '%s' "$pool_json" | jq -r '.last_dispatch_at // empty')
+  [ -n "$last_dispatch" ] || return 0
+
+  local last_epoch now_epoch age
+  now_epoch=$(date +%s)
+  last_epoch=$(_iso_to_epoch "$last_dispatch")
+  age=$(( now_epoch - last_epoch ))
+
+  if [ "$age" -ge "$ttl" ]; then
+    pool_log "watcher" "TTL expired (${age}s >= ${ttl}s), auto-stopping pool"
+    pool_stop
+    exit 0
+  fi
 }
 
 # _watcher_phase1
@@ -572,6 +655,28 @@ _watcher_phase1() {
             '.slots |= map(if .index == $idx then .status = "error" else . end)')
           pool_log "watcher" "slot-$i: pane dead ($slot_status), marking error"
           error_count=$(( error_count + 1 ))
+
+        # Idle slot reaping: if idle longer than idle_timeout, mark for offload
+        elif [ "$slot_status" = "idle" ]; then
+          local idle_timeout_val last_used
+          idle_timeout_val=$(printf '%s' "$pool_json" | jq -r '.idle_timeout // 1800')
+          if [ "$idle_timeout_val" -gt 0 ]; then
+            last_used=$(printf '%s' "$pool_json" | jq -r --argjson idx "$i" \
+              '.slots[] | select(.index == $idx) | .last_used_at // empty')
+            if [ -n "$last_used" ]; then
+              local last_used_epoch now_epoch_r idle_age
+              now_epoch_r=$(date +%s)
+              last_used_epoch=$(_iso_to_epoch "$last_used")
+              idle_age=$(( now_epoch_r - last_used_epoch ))
+              if [ "$idle_age" -ge "$idle_timeout_val" ]; then
+                # Mark for offload outside the lock (tmux I/O)
+                pool_json=$(printf '%s' "$pool_json" | jq \
+                  --argjson idx "$i" \
+                  '.slots |= map(if .index == $idx then .status = "reaping" else . end)')
+                pool_log "watcher" "slot-$i: idle for ${idle_age}s (>= ${idle_timeout_val}s), marking for reap"
+              fi
+            fi
+          fi
         fi
         ;;
 
@@ -876,5 +981,91 @@ pool_migrate() {
     printf 'nothing to clean up — already migrated\n'
   else
     printf 'migration complete: cleaned %d item(s)\n' "$cleaned"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# pool_gc (#9)
+# ---------------------------------------------------------------------------
+
+pool_gc() {
+  if [ ! -d "$SUB_CLAUDE_STATE_DIR" ]; then
+    printf 'no pools found\n'
+    return 0
+  fi
+
+  local cleaned=0
+
+  for pool_json_file in "$SUB_CLAUDE_STATE_DIR"/*/pool.json; do
+    [ -f "$pool_json_file" ] || break
+
+    local pool_path hash
+    pool_path="$(dirname "$pool_json_file")"
+    hash="$(basename "$pool_path")"
+
+    # SAFETY: never gc our own pool
+    local pool_dir_clean="${pool_path%/}"
+    [ "$pool_dir_clean" = "$POOL_DIR" ] && continue
+
+    local is_stale=0
+
+    # Check watcher PID
+    local watcher_pid_file="$pool_path/watcher.pid"
+    if [ -f "$watcher_pid_file" ]; then
+      local watcher_pid
+      watcher_pid=$(cat "$watcher_pid_file" 2>/dev/null)
+      if [ -n "$watcher_pid" ] && kill -0 "$watcher_pid" 2>/dev/null; then
+        # Watcher alive — check tmux
+        local tmux_socket
+        tmux_socket=$(jq -r '.tmux_socket // ""' "$pool_json_file" 2>/dev/null)
+        if [ -n "$tmux_socket" ] && tmux -L "$tmux_socket" has-session 2>/dev/null; then
+          continue  # pool is healthy, skip
+        fi
+        # Watcher alive but tmux dead — stale
+        is_stale=1
+      else
+        # Watcher dead
+        is_stale=1
+      fi
+    else
+      # No watcher.pid — stale
+      is_stale=1
+    fi
+
+    if [ "$is_stale" -eq 1 ]; then
+      printf 'gc: cleaning stale pool %s (%s)\n' "$hash" \
+        "$(jq -r '.project_dir // "unknown"' "$pool_json_file" 2>/dev/null)"
+
+      # Kill tmux server if still up
+      local tmux_socket
+      tmux_socket=$(jq -r '.tmux_socket // ""' "$pool_json_file" 2>/dev/null)
+      if [ -n "$tmux_socket" ]; then
+        tmux -L "$tmux_socket" kill-server 2>/dev/null || true
+      fi
+
+      # Kill watcher if still somehow alive
+      if [ -f "$watcher_pid_file" ]; then
+        local watcher_pid
+        watcher_pid=$(cat "$watcher_pid_file" 2>/dev/null || true)
+        if [ -n "$watcher_pid" ] && kill -0 "$watcher_pid" 2>/dev/null; then
+          kill "$watcher_pid" 2>/dev/null || true
+        fi
+      fi
+
+      # Safety: refuse to rm -rf anything that isn't absolute with >= 3 components
+      case "$pool_path" in
+        /*/*/?*) ;;
+        *) warn "refusing to remove unexpected pool path: $pool_path"; continue ;;
+      esac
+      rm -rf "$pool_path"
+
+      cleaned=$(( cleaned + 1 ))
+    fi
+  done
+
+  if [ "$cleaned" -eq 0 ]; then
+    printf 'no stale pools found\n'
+  else
+    printf 'gc: cleaned %d stale pool(s)\n' "$cleaned"
   fi
 }

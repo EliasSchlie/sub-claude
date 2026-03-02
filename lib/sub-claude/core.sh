@@ -547,6 +547,27 @@ _locked_remove_slot() {
     '.slots |= map(select(.index != $idx))' | update_pool_json
 }
 
+# _iso_to_epoch <ISO-8601-timestamp>
+# Convert an ISO 8601 UTC timestamp to epoch seconds.
+# Falls back to current epoch on parse failure and logs a warning.
+_iso_to_epoch() {
+  local ts="$1"
+  if date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$ts" +%s 2>/dev/null; then
+    return
+  fi
+  if date -d "$ts" +%s 2>/dev/null; then
+    return
+  fi
+  pool_log "core" "WARNING: failed to parse timestamp '$ts', using current time"
+  date +%s
+}
+
+_locked_update_last_dispatch_at() {
+  local now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  read_pool_json | jq --arg now "$now" '.last_dispatch_at = $now' | update_pool_json
+}
+
 # ---------------------------------------------------------------------------
 # Pool health checks
 # ---------------------------------------------------------------------------

@@ -65,12 +65,14 @@ Session commands:
   clean <id> [--force | --force-all]  Clean session + children
 
 Pool management:
-  pool init [--size N]            Start pool (default: 5)
+  pool init [--size N] [--idle-timeout S] [--ttl S]
+                                    Start pool (default: 5 slots, 1800s idle, 7200s TTL)
   pool stop                       Kill pool + tmux server
   pool status                     Show pool overview
   pool resize N                   Add or remove slots
   pool list                       List all pools across projects
   pool destroy <hash> | --all     Tear down a specific or all pools
+  pool gc                         Clean up stale pool directories
   pool migrate                    Clean up old claude-pool artifacts
 
 Debug:
@@ -126,6 +128,7 @@ case "$cmd" in
       resize)  pool_resize "$@" ;;
       list|ls) pool_list "$@" ;;
       destroy) pool_destroy "$@" ;;
+      gc)      pool_gc "$@" ;;
       migrate) pool_migrate "$@" ;;
       *)
         echo "sub-claude: unknown pool command: '$pool_cmd'" >&2

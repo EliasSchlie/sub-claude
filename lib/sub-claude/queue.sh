@@ -242,6 +242,9 @@ dispatch_queue() {
       with_pool_lock _locked_set_job_uuid "$job_id" "$slot_uuid"
     fi
 
+    # Update last_dispatch_at for TTL tracking
+    with_pool_lock _locked_update_last_dispatch_at
+
     pool_log "watcher" "queue: $job_id dispatched to slot-$slot, prompt sent"
   done
 }

@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve lib dir: prefer sibling lib/ next to bin/, fall back to ~/.local/lib/
+_bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLAUDE_POOL_LIB="${_bin_dir}/../lib/claude-pool"
+if [[ ! -d "$CLAUDE_POOL_LIB" ]]; then
+  CLAUDE_POOL_LIB="$HOME/.local/lib/claude-pool"
+fi
+if [[ ! -d "$CLAUDE_POOL_LIB" ]]; then
+  echo "sub-claude: lib dir not found (tried ${_bin_dir}/../lib/claude-pool and ~/.local/lib/claude-pool)" >&2
+  exit 1
+fi
+CLAUDE_POOL_LIB="$(cd "$CLAUDE_POOL_LIB" && pwd)"
+
+# Source output parser library (standalone, no claude-pool deps)
+_output_lib="${_bin_dir}/../lib/claude-output"
+if [[ ! -d "$_output_lib" ]]; then
+  _output_lib="$HOME/.local/lib/claude-output"
+fi
+if [[ -f "$_output_lib/parse.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "$_output_lib/parse.sh"
+fi
+if [[ -f "$_output_lib/jsonl.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "$_output_lib/jsonl.sh"
+fi
+
+# Source libs — core.sh first, then the rest
+if [[ -f "$CLAUDE_POOL_LIB/core.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "$CLAUDE_POOL_LIB/core.sh"
+fi
+for _lib in "$CLAUDE_POOL_LIB"/*.sh; do
+  [[ "$(basename "$_lib")" == "core.sh" ]] && continue
+  # shellcheck source=/dev/null
+  source "$_lib"
+done
+
+resolve_pool_dir
+
+usage() {
+  cat <<'EOF'
+Usage: sub-claude [-v LEVEL] <command> [args]
+
+Global options:
+  -v, --verbosity LEVEL   Output filter: response|conversation|full|raw (default: raw)
+  --terminal              Output raw terminal capture instead of JSONL response
+
+Session commands:
+  start "prompt" [--block]        Start a new session
+  followup <id> "prompt" [--block] Continue a session
+  input <id> "text"               Type text into session
+  key <id> <key>                  Send special key (Escape, Enter, ...)
+  capture <id>                    Capture terminal output
+  result <id>                     Get final output (errors if running)
+  wait [<id>] [--quiet]           Wait for completion
+  pin <id> [duration]             Prevent offloading (default: 120s)
+  unpin <id>                      Allow offloading again
+  status <id>                     Show session state
+  list [--tree | --all]           Show sessions
+  stop <id> | --tree | --all      Interrupt busy session(s)
+  cancel <id>                     Remove from queue
+  clean <id> [--force | --force-all]  Clean session + children
+
+Pool management:
+  pool init [--size N]            Start pool (default: 5)
+  pool stop                       Kill pool + tmux server
+  pool status                     Show pool overview
+  pool resize N                   Add or remove slots
+
+Debug:
+  attach <id>                     Attach to tmux pane
+  uuid <id>                       Show Claude UUID + slot info
+EOF
+}
+
+# Parse global options before the subcommand.
+export CLAUDE_POOL_VERBOSITY="${CLAUDE_POOL_VERBOSITY:-raw}"
+export CLAUDE_POOL_TERMINAL="${CLAUDE_POOL_TERMINAL:-}"
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    --verbosity|-v)
+      [[ $# -ge 2 ]] || { echo "sub-claude: -v requires an argument" >&2; exit 1; }
+      CLAUDE_POOL_VERBOSITY="$2"; shift 2
+      case "$CLAUDE_POOL_VERBOSITY" in
+        response|conversation|full|raw) ;;
+        *) echo "sub-claude: invalid verbosity '$CLAUDE_POOL_VERBOSITY' (use response|conversation|full|raw)" >&2; exit 1 ;;
+      esac ;;
+    --terminal) CLAUDE_POOL_TERMINAL="--terminal"; shift ;;
+    *) break ;;
+  esac
+done
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  start)    cmd_start "$@" ;;
+  followup) cmd_followup "$@" ;;
+  input)    cmd_input "$@" ;;
+  key)      cmd_key "$@" ;;
+  capture)  cmd_capture "$@" ;;
+  result)   cmd_result "$@" ;;
+  wait)     cmd_wait "$@" ;;
+  pin)      cmd_pin "$@" ;;
+  unpin)    cmd_unpin "$@" ;;
+  status)   cmd_status "$@" ;;
+  list|ls)  cmd_list "$@" ;;
+  stop)     cmd_stop "$@" ;;
+  cancel)   cmd_cancel "$@" ;;
+  clean)    cmd_clean "$@" ;;
+  attach)   cmd_attach "$@" ;;
+  uuid)     cmd_uuid "$@" ;;
+  pool)
+    pool_cmd="${1:-}"
+    shift || true
+    case "$pool_cmd" in
+      init)   pool_init "$@" ;;
+      stop)   pool_stop "$@" ;;
+      status) pool_status "$@" ;;
+      resize) pool_resize "$@" ;;
+      *)
+        echo "sub-claude: unknown pool command: '$pool_cmd'" >&2
+        echo "Run 'sub-claude help' for usage." >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  help|-h|--help|'')
+    usage
+    ;;
+  *)
+    echo "sub-claude: unknown command: '$cmd'" >&2
+    echo "Run 'sub-claude help' for usage." >&2
+    exit 1
+    ;;
+esac

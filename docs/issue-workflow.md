@@ -10,9 +10,9 @@ Stop if any step fails. Don't PR a broken fix.
 1. **Read code** — understand the bug(s)
 2. **Temp dir** — each agent creates its own: `agent_dir=$(mktemp -d)` — save the path in the job metadata or a variable for re-use
 3. **Reproduce** — in the temp dir via `-C "$agent_dir"` — never in the live repo's pool
-4. **Worktree** — `git worktree add .claude/worktrees/fix-issue-N -b fix/issue-N`
+4. **Clone** — `git clone --local . "$agent_dir/repo" && cd "$agent_dir/repo" && git checkout -b fix/issue-N` — full isolation, no shared state, disposable
 5. **Failing tests** — follow patterns in `tests/`, confirm they fail before fix
-6. **Fix** — minimal change in the worktree
+6. **Fix** — minimal change in the clone
 7. **Full test suite** — `./dev.sh test unit` + integration if relevant, all green
 8. **Code review** — spawn a review sub-agent via `sub-claude start`, wait for it
 9. **Re-reproduce** — in the same `$agent_dir`, confirm bug is gone
@@ -22,5 +22,5 @@ Stop if any step fails. Don't PR a broken fix.
 
 1. Fresh review agent per PR — review diff, file a **GitHub issue** per problem found, comment on PR
 2. Fix agents address review issues on the same branch, close the issues
-3. Merge all PRs, clean up worktrees and branches
+3. Merge all PRs, clean up temp clones and branches
 4. Update docs if fixed behavior was documented differently, file issues for new bugs encountered

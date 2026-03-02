@@ -26,4 +26,4 @@ sub-claude pool init --size 2
 sub-claude pool stop
 ```
 
-All three avoid killing a live pool. Pool identity is derived from the project directory (git root, or `$PWD` outside git) — running `pool stop` from a worktree or the main repo targets the same pool.
+All three avoid killing a live pool. Pool identity is derived from the project directory (git root, or `$PWD` outside git) — running `pool stop` from anywhere within the repo targets the same pool.

@@ -12,4 +12,5 @@ Session-oriented pool of persistent Claude TUI slots backed by tmux.
 ## Rules
 
 - **Never `git add -A` or `git add .`** — always stage specific files by name
-- **Never run real `pool stop`/`pool gc`/`pool destroy` from this repo or its worktrees** — it kills the pool you're running in. Use a temp dir outside any git repo instead.
+- **Never run real `pool stop`/`pool gc`/`pool destroy` from this repo** — it kills the pool you're running in. Use a temp dir outside any git repo instead.
+- **Never use worktrees in pool slots** — `EnterWorktree` has no exit, permanently trapping the slot. `git worktree add` + `git -C` also shares the same `.git` and pool identity. Instead, clone into a temp dir: `git clone --local . /tmp/fix-N` — full isolation, separate pool identity, disposable.

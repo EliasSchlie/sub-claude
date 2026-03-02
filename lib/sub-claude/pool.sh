@@ -18,7 +18,7 @@ pool_init() {
   # Check for old claude-pool artifacts (#11)
   _check_old_claude_pool
 
-  local pool_size=5
+  local pool_size="$SUB_CLAUDE_DEFAULT_POOL_SIZE"
   local idle_timeout=1800  # 30 minutes default
   local ttl=7200           # 2 hours default
 

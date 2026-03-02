@@ -24,6 +24,7 @@
 # shellcheck disable=SC2034  # used by other modules that source this file
 SUB_CLAUDE_VERSION=1
 SUB_CLAUDE_MAX_DEPTH=5
+SUB_CLAUDE_DEFAULT_POOL_SIZE=5
 SUB_CLAUDE_STATE_DIR="${SUB_CLAUDE_STATE_DIR:-$HOME/.sub-claude/pools}"
 case "$SUB_CLAUDE_STATE_DIR" in
   /*) ;;
@@ -582,6 +583,31 @@ ensure_pool_exists() {
   if [ ! -f "$POOL_DIR/pool.json" ]; then
     die "no pool found for this project — run 'sub-claude pool init' first"
   fi
+}
+
+# ensure_pool_exists_or_wait <timeout_secs> — spin-wait for pool.json to appear.
+# Used by commands (like cmd_wait) that may be called right after auto-init,
+# before pool init has created pool.json. Dies if timeout elapses.
+ensure_pool_exists_or_wait() {
+  local timeout="${1:-30}"
+  if [ -f "$POOL_DIR/pool.json" ]; then
+    return 0
+  fi
+  # Only spin-wait if there's evidence of an auto-init in progress
+  # (queue dir exists but pool.json doesn't).
+  if [ ! -d "$POOL_DIR/queue" ]; then
+    die "no pool found for this project — run 'sub-claude pool init' first"
+  fi
+  warn "pool initializing — waiting up to ${timeout}s..."
+  local elapsed=0
+  while [ "$elapsed" -lt "$timeout" ]; do
+    if [ -f "$POOL_DIR/pool.json" ]; then
+      return 0
+    fi
+    sleep 1
+    elapsed=$(( elapsed + 1 ))
+  done
+  die "timed out waiting for pool init (${timeout}s)"
 }
 
 # is_pool_running() — return 0 if the watcher is alive AND the tmux server is up.

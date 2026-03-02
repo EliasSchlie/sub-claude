@@ -151,7 +151,7 @@ _require_pool() {
 _auto_init_pool() {
   local job_id="$1" prompt="$2"
 
-  printf 'no pool found — initializing (5 slots)...\n' >&2
+  printf 'no pool found — initializing (%d slots)...\n' "$SUB_CLAUDE_DEFAULT_POOL_SIZE" >&2
 
   # Create minimal directory structure for the queue.
   mkdir -p "$POOL_DIR/queue" "$POOL_DIR/jobs/$job_id"
@@ -198,7 +198,7 @@ _auto_init_pool() {
   # Launch pool init as detached background (survives parent death).
   # exec </dev/null prevents stdin inheritance; output goes to /dev/null
   # so the claude binary launch doesn't disrupt current Bash tool output.
-  ( exec </dev/null >/dev/null 2>&1; sub-claude pool init ) & disown
+  ( exec </dev/null >/dev/null 2>&1; sub-claude pool init --size "$SUB_CLAUDE_DEFAULT_POOL_SIZE" ) & disown
 
   return 0
 }
@@ -864,7 +864,8 @@ cmd_wait() {
   # Export terminal flag so delegated cmd_result inherits it.
   SUB_CLAUDE_TERMINAL="$terminal"
 
-  ensure_pool_exists
+  # Tolerate the auto-init race: pool init with 5 slots can take 30-60s.
+  ensure_pool_exists_or_wait 60
 
   if [ -n "$id" ]; then
     # Wait for a specific job.

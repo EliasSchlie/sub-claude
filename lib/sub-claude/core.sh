@@ -24,7 +24,11 @@
 # shellcheck disable=SC2034  # used by other modules that source this file
 SUB_CLAUDE_VERSION=1
 SUB_CLAUDE_MAX_DEPTH=5
-SUB_CLAUDE_STATE_DIR="$HOME/.sub-claude/pools"
+SUB_CLAUDE_STATE_DIR="${SUB_CLAUDE_STATE_DIR:-$HOME/.sub-claude/pools}"
+case "$SUB_CLAUDE_STATE_DIR" in
+  /*) ;;
+  *)  printf 'error: SUB_CLAUDE_STATE_DIR must be an absolute path (got %s)\n' "$SUB_CLAUDE_STATE_DIR" >&2; exit 1 ;;
+esac
 
 # ---------------------------------------------------------------------------
 # Path / hash helpers

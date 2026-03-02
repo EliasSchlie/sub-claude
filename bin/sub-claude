@@ -38,13 +38,12 @@ for _lib in "$SUB_CLAUDE_LIB"/*.sh; do
   source "$_lib"
 done
 
-resolve_pool_dir
-
 usage() {
   cat <<'EOF'
-Usage: sub-claude [-v LEVEL] <command> [args]
+Usage: sub-claude [-C <dir>] [-v LEVEL] <command> [args]
 
 Global options:
+  -C <dir>                Target a pool in a different project directory
   -v, --verbosity LEVEL   Output filter: response|conversation|full|raw (default: raw)
   --terminal              Output raw terminal capture instead of JSONL response
 
@@ -86,6 +85,10 @@ export SUB_CLAUDE_VERBOSITY="${SUB_CLAUDE_VERBOSITY:-raw}"
 export SUB_CLAUDE_TERMINAL="${SUB_CLAUDE_TERMINAL:-}"
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
+    -C)
+      [[ $# -ge 2 ]] || { echo "sub-claude: -C requires a directory argument" >&2; exit 1; }
+      cd "$2" || { echo "sub-claude: cannot cd to '$2'" >&2; exit 1; }
+      shift 2 ;;
     --verbosity|-v)
       [[ $# -ge 2 ]] || { echo "sub-claude: -v requires an argument" >&2; exit 1; }
       SUB_CLAUDE_VERBOSITY="$2"; shift 2
@@ -97,6 +100,8 @@ while [[ "${1:-}" == -* ]]; do
     *) break ;;
   esac
 done
+
+resolve_pool_dir
 
 cmd="${1:-}"
 shift || true

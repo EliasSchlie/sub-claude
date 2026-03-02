@@ -40,7 +40,7 @@ sub-claude wait  # waits for the next one
 
 ```
 # Global options
-sub-claude [-v response|conversation|full|raw] <command> [args]
+sub-claude [-C <dir>] [-v response|conversation|full|raw] <command> [args]
 
 # Session commands
 sub-claude start "prompt" [--block]
@@ -70,7 +70,18 @@ sub-claude pool migrate                 # clean up old claude-pool artifacts
 # Debug
 sub-claude attach <id>                  # attach to tmux pane (live view)
 sub-claude uuid <id>                    # print Claude UUID, slot, status
+
+# Cross-project targeting
+sub-claude -C /path/to/other/project pool status
+sub-claude -C ~/obsidian start "organize notes"
 ```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SUB_CLAUDE_STATE_DIR` | `~/.sub-claude/pools` | Pool metadata root directory |
+| `SUB_CLAUDE_VERBOSITY` | `raw` | Output filter level |
 
 ## Output Contract
 

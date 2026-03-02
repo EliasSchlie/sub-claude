@@ -13,6 +13,14 @@ if [[ ! -d "$SUB_CLAUDE_LIB" ]]; then
 fi
 SUB_CLAUDE_LIB="$(cd "$SUB_CLAUDE_LIB" && pwd)"
 
+# Resolve plugin dir: repo root (dev) or installed share dir
+_repo_root="${SUB_CLAUDE_LIB}/../.."
+if [[ -f "$_repo_root/.claude-plugin/plugin.json" ]]; then
+  SUB_CLAUDE_PLUGIN_DIR="$(cd "$_repo_root" && pwd)"
+elif [[ -f "$HOME/.local/share/sub-claude/.claude-plugin/plugin.json" ]]; then
+  SUB_CLAUDE_PLUGIN_DIR="$HOME/.local/share/sub-claude"
+fi
+
 # Source output parser library (standalone, no sub-claude deps)
 _output_lib="${_bin_dir}/../lib/claude-output"
 if [[ ! -d "$_output_lib" ]]; then

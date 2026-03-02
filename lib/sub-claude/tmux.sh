@@ -346,6 +346,11 @@ write_slot_wrapper() {
   mkdir -p "$slot_dir"
 
   # printf %q safely quotes the project_dir for the cd command
+  local plugin_flag=""
+  if [[ -n "${SUB_CLAUDE_PLUGIN_DIR:-}" ]]; then
+    plugin_flag=" --plugin-dir $(printf '%q' "$SUB_CLAUDE_PLUGIN_DIR")"
+  fi
+
   cat > "$slot_dir/run.sh" <<RUNEOF
 #!/usr/bin/env bash
 unset CLAUDECODE
@@ -354,7 +359,7 @@ export SUB_CLAUDE_SLOT=$slot
 export SUB_CLAUDE_DONE_FILE="$slot_dir/done"
 export CLAUDE_BELL_OFF=1
 cd $(printf '%q' "$project_dir")
-exec claude --dangerously-skip-permissions
+exec claude --dangerously-skip-permissions${plugin_flag}
 RUNEOF
   chmod +x "$slot_dir/run.sh"
 }

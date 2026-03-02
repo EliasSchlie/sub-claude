@@ -111,6 +111,7 @@ Under **queue pressure** (queued jobs ≥ half pool size), `--block` degrades to
 |-----------|------|
 | Interactive key sequences, pinning, multi-instance isolation | [interactive-sessions.md](interactive-sessions.md) |
 | Pool setup, resizing, queue pressure, environment variables | [pool-management.md](pool-management.md) |
+| `sub-claude` not found, install/update/uninstall | [installation.md](installation.md) |
 
 ## Feedback & Issues
 

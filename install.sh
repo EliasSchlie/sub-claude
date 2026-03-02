@@ -2,13 +2,12 @@
 set -euo pipefail
 
 # =============================================================================
-# install.sh — Install sub-claude CLI
+# install.sh — Install sub-claude CLI + Claude Code plugin
 # =============================================================================
-# Installs the sub-claude binary and libraries to standard locations.
-# Also sets up the Claude Code stop hook for pool completion detection.
+# Installs the sub-claude binary, libraries, and plugin to standard locations.
 #
 # Usage:
-#   ./install.sh              # install to ~/.local/{bin,lib}
+#   ./install.sh              # install to ~/.local/{bin,lib,share}
 #   ./install.sh --prefix /usr/local   # custom prefix
 #   ./install.sh --uninstall  # remove installed files
 
@@ -32,10 +31,10 @@ Options:
   -h, --help      Show this help
 
 Installs:
-  <prefix>/bin/sub-claude           CLI binary
-  <prefix>/lib/sub-claude/         Pool library
-  <prefix>/lib/claude-output/       Output parser library
-  ~/.claude/hooks/sub-claude-done.sh  Stop hook (optional)
+  <prefix>/bin/sub-claude              CLI binary
+  <prefix>/lib/sub-claude/             Pool library
+  <prefix>/lib/claude-output/          Output parser library
+  <prefix>/share/sub-claude/           Claude Code plugin (hooks + skills)
 EOF
       exit 0 ;;
     *) echo "install.sh: unknown option '$1'" >&2; exit 1 ;;
@@ -44,13 +43,17 @@ done
 
 BIN_DIR="$PREFIX/bin"
 LIB_DIR="$PREFIX/lib"
+SHARE_DIR="$PREFIX/share/sub-claude"
 
 if $UNINSTALL; then
   echo "Uninstalling sub-claude..."
   rm -f "$BIN_DIR/sub-claude"
   rm -rf "$LIB_DIR/sub-claude"
   rm -rf "$LIB_DIR/claude-output"
+  rm -rf "$SHARE_DIR"
+  # Clean up legacy hook from pre-plugin installs
   rm -f "$HOME/.claude/hooks/sub-claude-done.sh"
+  rm -f "$HOME/.claude/hooks/sub-claude-guardrails.sh"
   echo "Done."
   exit 0
 fi
@@ -72,24 +75,23 @@ echo "  Installed binary:  $BIN_DIR/sub-claude"
 echo "  Installed libs:    $LIB_DIR/sub-claude/"
 echo "                     $LIB_DIR/claude-output/"
 
-# Install stop hook (if ~/.claude/ exists)
-if [[ -d "$HOME/.claude" ]]; then
-  mkdir -p "$HOME/.claude/hooks"
-  cp "$SCRIPT_DIR/hooks/sub-claude-done.sh" "$HOME/.claude/hooks/sub-claude-done.sh"
-  chmod +x "$HOME/.claude/hooks/sub-claude-done.sh"
-  echo "  Installed hook:    ~/.claude/hooks/sub-claude-done.sh"
-  echo ""
-  echo "NOTE: Add the stop hook to ~/.claude/settings.json if not already configured:"
-  echo '  "hooks": {'
-  echo '    "Stop": [{'
-  echo '      "matcher": "",'
-  echo '      "hooks": [{ "type": "command", "command": "~/.claude/hooks/sub-claude-done.sh" }]'
-  echo '    }]'
-  echo '  }'
-else
-  echo ""
-  echo "NOTE: ~/.claude/ not found. Install Claude Code first, then re-run to install the stop hook."
-  echo "  Or manually copy hooks/sub-claude-done.sh to ~/.claude/hooks/"
+# Install Claude Code plugin (hooks + skills)
+rm -rf "$SHARE_DIR"
+mkdir -p "$SHARE_DIR/.claude-plugin" "$SHARE_DIR/hooks"
+cp "$SCRIPT_DIR/.claude-plugin/plugin.json" "$SHARE_DIR/.claude-plugin/plugin.json"
+cp "$SCRIPT_DIR/hooks/hooks.json" "$SHARE_DIR/hooks/hooks.json"
+cp "$SCRIPT_DIR/hooks/"*.sh "$SHARE_DIR/hooks/"
+cp -r "$SCRIPT_DIR/skills" "$SHARE_DIR/skills"
+echo "  Installed plugin:  $SHARE_DIR/"
+
+# Clean up legacy hook files from pre-plugin installs
+if [[ -f "$HOME/.claude/hooks/sub-claude-done.sh" ]]; then
+  rm -f "$HOME/.claude/hooks/sub-claude-done.sh"
+  echo "  Removed legacy:    ~/.claude/hooks/sub-claude-done.sh"
+fi
+if [[ -f "$HOME/.claude/hooks/sub-claude-guardrails.sh" ]]; then
+  rm -f "$HOME/.claude/hooks/sub-claude-guardrails.sh"
+  echo "  Removed legacy:    ~/.claude/hooks/sub-claude-guardrails.sh"
 fi
 
 # Check PATH

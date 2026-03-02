@@ -143,6 +143,17 @@ sub-claude -v response start \
   --block
 ```
 
+## Lookup and Shadowing
+
+When project-local and global directories both contain a command with the same name, **project-local wins**. `sub-claude run --list` shows both entries so you can spot shadows:
+
+```
+  review               (project) Review with project conventions
+  review               (global) Generic code review
+```
+
+Running `sub-claude run review` executes the project-local one.
+
 ## Tips
 
 - **Use `-v response`** to get just the model's answer (strips TUI chrome)
@@ -152,3 +163,14 @@ sub-claude -v response start \
 - **Exit codes propagate** — if `sub-claude` fails, your script's `set -euo pipefail` catches it
 - **Project-local commands** are great for repo-specific workflows (deploy, lint, review with project conventions)
 - **Global commands** are great for general-purpose tools (explain, summarize, translate)
+
+## Limitations
+
+- **Argument length:** Embedding large content (e.g., `$(git diff)`) directly in the prompt string can hit the OS `ARG_MAX` limit (~256KB on macOS, ~2MB on Linux). For large inputs, write to a tempfile and reference it in the prompt:
+  ```bash
+  tmp=$(mktemp)
+  git diff > "$tmp"
+  sub-claude -v response start "Review this diff (in $tmp):\n\nSee the file at $tmp" --block
+  rm "$tmp"
+  ```
+- **Command names** must match `[a-zA-Z0-9_-]+` — no dots, slashes, or spaces.

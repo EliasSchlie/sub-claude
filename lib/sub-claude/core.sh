@@ -566,10 +566,10 @@ _iso_to_epoch() {
   date +%s
 }
 
-_locked_update_last_dispatch_at() {
+_locked_update_last_activity_at() {
   local now
   now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  read_pool_json | jq --arg now "$now" '.last_dispatch_at = $now' | update_pool_json
+  read_pool_json | jq --arg now "$now" '.last_activity_at = $now' | update_pool_json
 }
 
 # ---------------------------------------------------------------------------

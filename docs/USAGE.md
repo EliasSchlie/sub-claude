@@ -43,13 +43,13 @@ sub-claude wait  # waits for the next one
 sub-claude [-C <dir>] [-v response|conversation|full|raw] <command> [args]
 
 # Session commands
-sub-claude start "prompt" [--block]
-sub-claude followup <id> "prompt" [--block]
+sub-claude start "prompt" [--block] [--timeout S]
+sub-claude followup <id> "prompt" [--block] [--timeout S]
 sub-claude input <id> "text"            # type text + Enter into session
 sub-claude key <id> Escape|Enter|Up|... # send special key
 sub-claude capture <id>                 # live terminal or stored snapshot
 sub-claude result <id>                  # final output (errors if still running)
-sub-claude wait [<id>] [--quiet]        # block until done
+sub-claude wait [<id>] [--quiet] [--timeout S]  # block until done
 sub-claude pin <id> [duration]          # prevent offloading (default: 120s)
 sub-claude unpin <id>                   # allow offloading again
 sub-claude status <id>                  # show session state
@@ -59,7 +59,7 @@ sub-claude cancel <id>                  # remove queued job (not yet running)
 sub-claude clean <id> [--force | --force-all]
 
 # Pool management
-sub-claude pool init [--size N]         # start pool (default: 5 slots)
+sub-claude pool init [--size N] [--idle-timeout S] [--ttl S] [--pressure-threshold N]
 sub-claude pool stop                    # kill pool + tmux server
 sub-claude pool status                  # show slots, sessions, queue
 sub-claude pool resize N                # add or remove slots
@@ -138,7 +138,9 @@ Rules:
 
 **`--block`:** waits inline, prints terminal output to stdout. ID goes to stderr. Use when you need the result before continuing.
 
-Under **queue pressure** (queued jobs ≥ half pool size), `--block` degrades to non-blocking and prints a warning — don't rely on it silently blocking when the pool is saturated. Use `wait <id> --quiet` to block without pressure warnings.
+**`--timeout N`:** (seconds) limits how long `--block` or `wait` will poll before giving up. Default: 0 (no limit). On timeout, exits with an error — the job may still be running. Useful for preventing indefinite hangs in automation.
+
+Under **queue pressure** (queued jobs ≥ threshold), `--block` degrades to non-blocking and prints a warning — don't rely on it silently blocking when the pool is saturated. The pressure threshold defaults to half the pool size, configurable via `pool init --pressure-threshold N`. Use `wait <id> --quiet` to block without pressure warnings.
 
 ## Terminal Interaction
 
@@ -191,7 +193,7 @@ When all slots are busy, jobs queue up (FIFO). The pool handles this transparent
 
 Watch for this warning on `--block`:
 ```
-warning: high queue pressure (3 queued, pool size 5) — not blocking
+warning: high queue pressure (3 queued, threshold 3, pool size 5) — not blocking
 hint: expand pool with 'sub-claude pool resize N' or wait explicitly with 'sub-claude wait <id> --quiet'
 ```
 
@@ -200,6 +202,9 @@ When you see it: the call returned the ID immediately without blocking. Either `
 ```bash
 sub-claude pool resize 8    # grow to 8 slots (runs claude in new panes — see caution below)
 sub-claude pool status      # inspect current queue + slot state
+
+# Custom threshold: trigger pressure at 2 queued instead of default
+sub-claude pool init --size 5 --pressure-threshold 2
 ```
 
 ## Best Practices

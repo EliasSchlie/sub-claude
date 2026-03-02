@@ -48,13 +48,13 @@ Global options:
   --terminal              Output raw terminal capture instead of JSONL response
 
 Session commands:
-  start "prompt" [--block]        Start a new session
-  followup <id> "prompt" [--block] Continue a session
+  start "prompt" [--block] [--timeout S]   Start a new session
+  followup <id> "prompt" [--block] [--timeout S]  Continue a session
   input <id> "text"               Type text into session
   key <id> <key>                  Send special key (Escape, Enter, ...)
   capture <id>                    Capture terminal output
   result <id>                     Get final output (errors if running)
-  wait [<id>] [--quiet]           Wait for completion
+  wait [<id>] [--quiet] [--timeout S]  Wait for completion
   pin <id> [duration]             Prevent offloading (default: 120s)
   unpin <id>                      Allow offloading again
   status <id>                     Show session state
@@ -64,7 +64,7 @@ Session commands:
   clean <id> [--force | --force-all]  Clean session + children
 
 Pool management:
-  pool init [--size N] [--idle-timeout S] [--ttl S]
+  pool init [--size N] [--idle-timeout S] [--ttl S] [--pressure-threshold N]
                                     Start pool (default: 5 slots, 1800s idle, 7200s TTL)
   pool stop                       Kill pool + tmux server
   pool status                     Show pool overview

@@ -14,6 +14,19 @@
 # Helpers (session-local)
 # ---------------------------------------------------------------------------
 
+# _queue_hint — one-shot hint suggesting pool resize when a job stays queued.
+# Usage: _queue_hint <start_epoch> <threshold_seconds>
+# Returns 0 (and prints hint) only the first time threshold is exceeded.
+# Relies on caller setting _queue_hint_shown=false before the polling loop.
+_queue_hint() {
+  ${_queue_hint_shown:-true} && return 1
+  local _qh_elapsed=$(( $(date +%s) - $1 ))
+  [ "$_qh_elapsed" -ge "${2:-10}" ] || return 1
+  _queue_hint_shown=true
+  warn "job queued for ${_qh_elapsed}s — all pool slots are busy"
+  warn "hint: expand the pool with 'sub-claude pool resize N'"
+}
+
 # _emit_pane <slot> — capture pane output, filtered by SUB_CLAUDE_VERBOSITY.
 _emit_pane() {
   local slot="$1"
@@ -502,11 +515,13 @@ cmd_start() {
       _emit_output "$id" "$cur_slot" "$terminal"
     else
       # Job is queued — poll until it gets a slot, then wait.
+      local _queue_hint_shown=false
       while true; do
         if [ "$timeout" -gt 0 ] 2>/dev/null; then
           local _elapsed=$(( $(date +%s) - _block_start ))
           if [ "$_elapsed" -ge "$timeout" ]; then
-            die "start --block: timed out after ${_elapsed}s (limit: ${timeout}s) — job $id may still be running"
+            warn "hint: all pool slots were busy — consider 'sub-claude pool resize N'"
+            die "start --block: timed out after ${_elapsed}s (limit: ${timeout}s) — job $id still queued"
           fi
         fi
         sleep 2
@@ -535,8 +550,10 @@ cmd_start() {
           queued)
             # Still waiting for a slot — check watcher is alive.
             if ! is_pool_running; then
+              warn "hint: consider 'sub-claude pool resize N' to add capacity"
               die "pool watcher stopped — job $id stuck in queue"
             fi
+            _queue_hint "$_block_start" 10
             continue
             ;;
         esac
@@ -666,6 +683,7 @@ cmd_followup() {
     _block_start=$(date +%s)
 
     local cur_slot
+    local _queue_hint_shown=false
     while true; do
       if [ "$timeout" -gt 0 ] 2>/dev/null; then
         local _elapsed=$(( $(date +%s) - _block_start ))
@@ -697,8 +715,10 @@ cmd_followup() {
           ;;
         queued)
           if ! is_pool_running; then
+            warn "hint: consider 'sub-claude pool resize N' to add capacity"
             die "pool watcher stopped — job $id stuck in queue"
           fi
+          _queue_hint "$_block_start" 10
           sleep 2
           continue
           ;;
@@ -932,6 +952,7 @@ cmd_wait() {
     fi
 
     # Poll until done.
+    local _queue_hint_shown=false
     while true; do
       if [ "$timeout" -gt 0 ] 2>/dev/null; then
         local _elapsed=$(( $(date +%s) - _wait_start ))
@@ -969,6 +990,7 @@ cmd_wait() {
           die "session $id crashed during processing"
           ;;
         queued)
+          _queue_hint "$_wait_start" 10
           sleep 2
           ;;
         *)

@@ -442,6 +442,12 @@ _locked_claim_and_dispatch() {
   get_job_meta "$job_id" | jq \
     --arg s "processing" --argjson slot "$slot" \
     '.status = $s | .slot = $slot' | update_job_meta "$job_id"
+
+  # Clear any leftover done sentinel from the previous job on this slot.
+  # Must happen inside the lock: if done outside, the watcher can see the
+  # slot as "busy" (new job) + stale done file and incorrectly mark the
+  # new job as completed (issue #4).
+  rm -f "$POOL_DIR/slots/$slot/done"
 }
 
 _locked_update_slot_fresh() {

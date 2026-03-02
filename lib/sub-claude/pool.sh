@@ -540,7 +540,7 @@ _watcher_phase1() {
           # --block and wait) also polls for it. Deleting it here creates a
           # race where the watcher consumes the signal before wait_for_done
           # sees it, forcing a 30s idle fallback. The done file is cleared
-          # by _dispatch_to_slot / dispatch_queue before each new prompt.
+          # by _locked_claim_and_dispatch (under the lock) before each new prompt.
           pool_log "watcher" "slot-$i: done file detected, busy -> idle"
 
         # Check pane liveness from pre-collected map

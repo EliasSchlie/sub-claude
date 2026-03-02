@@ -353,10 +353,8 @@ _dispatch_to_slot() {
     return 1
   fi
 
-  # INVARIANT: clear the done sentinel AFTER claiming the slot. Clearing
-  # before the lock would delete the sentinel for whichever job currently
-  # owns the slot, breaking its wait_for_done.
-  rm -f "$(_slot_done_file "$slot")"
+  # Done sentinel is now cleared inside _locked_claim_and_dispatch (under
+  # the lock) to prevent the watcher from seeing a stale done file.
 
   # Record the raw.log byte offset so capture_raw_log can isolate this
   # job's output from previous jobs on the same slot.

@@ -69,6 +69,9 @@ Pool management:
   pool stop                       Kill pool + tmux server
   pool status                     Show pool overview
   pool resize N                   Add or remove slots
+  pool list                       List all pools across projects
+  pool destroy <hash> | --all     Tear down a specific or all pools
+  pool migrate                    Clean up old claude-pool artifacts
 
 Debug:
   attach <id>                     Attach to tmux pane
@@ -117,10 +120,13 @@ case "$cmd" in
     pool_cmd="${1:-}"
     shift || true
     case "$pool_cmd" in
-      init)   pool_init "$@" ;;
-      stop)   pool_stop "$@" ;;
-      status) pool_status "$@" ;;
-      resize) pool_resize "$@" ;;
+      init)    pool_init "$@" ;;
+      stop)    pool_stop "$@" ;;
+      status)  pool_status "$@" ;;
+      resize)  pool_resize "$@" ;;
+      list|ls) pool_list "$@" ;;
+      destroy) pool_destroy "$@" ;;
+      migrate) pool_migrate "$@" ;;
       *)
         echo "sub-claude: unknown pool command: '$pool_cmd'" >&2
         echo "Run 'sub-claude help' for usage." >&2

@@ -1167,6 +1167,7 @@ cmd_cancel() {
   [ -n "$id" ] || die "cancel: job ID required"
   validate_id "$id"
   ensure_pool_exists
+  get_job_status "$id" >/dev/null
 
   cancel_job "$id"
 }
@@ -1201,6 +1202,7 @@ cmd_clean() {
 
   if [ -n "$id" ]; then
     validate_id "$id"
+    get_job_status "$id" >/dev/null
     # Target this job + all its descendants.
     targets="$id"
     local descendants
@@ -1414,6 +1416,7 @@ cmd_unpin() {
   [ -n "$id" ] || die "unpin: job ID required"
   validate_id "$id"
   ensure_pool_exists
+  get_job_status "$id" >/dev/null
 
   with_pool_lock _locked_remove_pin "$id"
 

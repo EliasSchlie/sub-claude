@@ -316,6 +316,7 @@ derive_depth() {
   caller_session=$(get_parent_session_id)
 
   local parent_depth=0
+  local found_in_pool=false
 
   if [ "$caller_session" != "standalone" ]; then
     # Find any currently active (processing) job whose parent_session matches.
@@ -327,13 +328,17 @@ derive_depth() {
 
     if [ -n "$found_depth" ] && [ "$found_depth" != "null" ]; then
       parent_depth="$found_depth"
+      found_in_pool=true
     fi
   fi
 
   local new_depth=$(( parent_depth + 1 ))
 
-  # Standalone callers at the top level start at depth 0, not 1.
-  if [ "$caller_session" = "standalone" ]; then
+  # Callers that don't occupy a pool slot start at depth 0:
+  # - "standalone": no claude ancestor in the process tree
+  # - Regular Claude sessions: claude ancestor found but no active job in this
+  #   pool — the parent isn't holding a slot, so no deadlock risk.
+  if [ "$caller_session" = "standalone" ] || [ "$found_in_pool" = "false" ]; then
     new_depth=0
   fi
 

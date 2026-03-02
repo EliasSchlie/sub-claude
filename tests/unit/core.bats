@@ -323,6 +323,18 @@ teardown() { _common_teardown; }
   [[ "$output" == *"recursion depth"* ]]
 }
 
+@test "derive_depth returns 0 for claude ancestor not in pool" {
+  # A regular Claude session (not a pool slot) calls sub-claude start.
+  # The parent claude process is found but has no active job in the pool.
+  # Should be treated as depth 0 — it's not occupying a slot.
+  jq -n '{version:1, pool_size:2, slots:[], pins:{}}' | update_pool_json
+
+  get_parent_session_id() { echo "regular-claude-99999"; }
+
+  depth=$(derive_depth)
+  [ "$depth" -eq 0 ]
+}
+
 @test "derive_depth allows depth-0 with pool_size=1" {
   # pool_size=1: effective_max = max(1, 1-1) = 1, so depth 0 is allowed.
   jq -n '{version:1, pool_size:1, slots:[], pins:{}}' | update_pool_json

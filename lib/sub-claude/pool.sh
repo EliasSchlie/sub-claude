@@ -22,6 +22,7 @@ pool_init() {
   local idle_timeout=1800  # 30 minutes default
   local ttl=7200           # 2 hours default
   local pressure_threshold=0  # 0 = auto ((pool_size+1)/2)
+  local local_pool=false
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -41,11 +42,25 @@ pool_init() {
         pressure_threshold="$2"
         shift 2
         ;;
+      --local)
+        local_pool=true
+        shift
+        ;;
       *)
         die "pool init: unknown argument '$1'"
         ;;
     esac
   done
+
+  # --local: create a project-local pool instead of the root pool.
+  # Re-resolve POOL_DIR/TMUX_SOCKET to the project-specific path.
+  if $local_pool; then
+    local project_dir hash
+    project_dir=$(get_project_dir)
+    hash=$(project_hash "$project_dir")
+    POOL_DIR="$SUB_CLAUDE_STATE_DIR/$hash"
+    TMUX_SOCKET="sub-claude-$hash"
+  fi
 
   # Validate pool size
   case "$pool_size" in
@@ -75,8 +90,14 @@ pool_init() {
   # Create directory structure
   mkdir -p "$POOL_DIR/slots" "$POOL_DIR/jobs" "$POOL_DIR/queue"
 
+  # Root pool uses $HOME as the base directory (agents cd to job's cwd).
+  # Project-local pools use the git root / PWD as before.
   local project_dir
-  project_dir=$(get_project_dir)
+  if is_root_pool; then
+    project_dir="$HOME"
+  else
+    project_dir=$(get_project_dir)
+  fi
 
   # Build initial slots JSON array
   local slots_json="["
@@ -94,9 +115,13 @@ pool_init() {
   local now
   now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+  local pool_type="local"
+  is_root_pool && pool_type="root"
+
   jq -n \
     --arg project_dir "$project_dir" \
     --arg tmux_socket "$TMUX_SOCKET" \
+    --arg pool_type "$pool_type" \
     --argjson pool_size "$pool_size" \
     --arg created_at "$now" \
     --argjson idle_timeout "$idle_timeout" \
@@ -106,6 +131,7 @@ pool_init() {
     --argjson slots "$slots_json" \
     '{
       version: 1,
+      pool_type: $pool_type,
       project_dir: $project_dir,
       tmux_socket: $tmux_socket,
       pool_size: $pool_size,
@@ -849,10 +875,22 @@ pool_list() {
       fi
     fi
 
-    if [ "$found" -eq 0 ]; then
-      printf '%-10s  %-6s  %-8s  %s\n' "HASH" "SLOTS" "WATCHER" "PROJECT"
+    # Determine pool type from pool.json or hash
+    local pool_type
+    pool_type=$(jq -r '.pool_type // empty' "$pool_json_file" 2>/dev/null)
+    if [ -z "$pool_type" ]; then
+      # Infer from hash for pre-upgrade pools
+      if [ "$hash" = "_root" ]; then
+        pool_type="root"
+      else
+        pool_type="local"
+      fi
     fi
-    printf '%-10s  %-6s  %-8s  %s\n' "$hash" "$pool_size" "$watcher_state" "$project_dir"
+
+    if [ "$found" -eq 0 ]; then
+      printf '%-10s  %-6s  %-6s  %-8s  %s\n' "HASH" "SLOTS" "TYPE" "WATCHER" "PROJECT"
+    fi
+    printf '%-10s  %-6s  %-6s  %-8s  %s\n' "$hash" "$pool_size" "$pool_type" "$watcher_state" "$project_dir"
     found=$(( found + 1 ))
   done
 
@@ -882,8 +920,9 @@ pool_destroy() {
 
 _pool_destroy_one() {
   local hash="$1"
-  # Validate hash — only hex characters, no path separators
+  # Validate hash — hex characters or the special "_root" name, no path separators
   case "$hash" in
+    _root) ;;
     *[!0-9a-f]*|'') die "invalid pool hash: '$hash'" ;;
   esac
   local pool_path="$SUB_CLAUDE_STATE_DIR/$hash"

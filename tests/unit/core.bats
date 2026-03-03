@@ -96,11 +96,11 @@ teardown() { _common_teardown; }
   [[ "$TMUX_SOCKET" == sub-claude-* ]]
 }
 
-@test "resolve_pool_dir TMUX_SOCKET contains 8-char hex hash" {
+@test "resolve_pool_dir TMUX_SOCKET is valid format" {
   resolve_pool_dir
-  local hash="${TMUX_SOCKET#sub-claude-}"
-  [ "${#hash}" -eq 8 ]
-  [[ "$hash" =~ ^[0-9a-f]{8}$ ]]
+  local suffix="${TMUX_SOCKET#sub-claude-}"
+  # Either 8-char hex (project-local) or "root" (root pool)
+  [[ "$suffix" =~ ^[0-9a-f]{8}$ ]] || [ "$suffix" = "root" ]
 }
 
 # ---------------------------------------------------------------------------

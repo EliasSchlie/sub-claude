@@ -49,6 +49,12 @@ enqueue() {
   local queued_at
   queued_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+  # Read cwd from job meta (needed for root pool dispatch)
+  local cwd=""
+  if [ -f "$POOL_DIR/jobs/$job_id/meta.json" ]; then
+    cwd=$(jq -r '.cwd // empty' "$POOL_DIR/jobs/$job_id/meta.json" 2>/dev/null)
+  fi
+
   # Step 2: Write the queue entry file.
   # Include claude_uuid only for resume-type jobs (null otherwise).
   if [ "$type" = "resume" ] && [ -n "$claude_uuid" ]; then
@@ -57,16 +63,18 @@ enqueue() {
       --arg type      "$type" \
       --arg prompt    "$prompt" \
       --arg uuid      "$claude_uuid" \
+      --arg cwd       "$cwd" \
       --arg queued_at "$queued_at" \
-      '{job_id: $job_id, type: $type, prompt: $prompt, claude_uuid: $uuid, queued_at: $queued_at}' \
+      '{job_id: $job_id, type: $type, prompt: $prompt, claude_uuid: $uuid, cwd: $cwd, queued_at: $queued_at}' \
       > "$queue_file"
   else
     jq -n \
       --arg job_id    "$job_id" \
       --arg type      "$type" \
       --arg prompt    "$prompt" \
+      --arg cwd       "$cwd" \
       --arg queued_at "$queued_at" \
-      '{job_id: $job_id, type: $type, prompt: $prompt, claude_uuid: null, queued_at: $queued_at}' \
+      '{job_id: $job_id, type: $type, prompt: $prompt, claude_uuid: null, cwd: $cwd, queued_at: $queued_at}' \
       > "$queue_file"
   fi
 
@@ -193,11 +201,12 @@ dispatch_queue() {
     local entry
     entry=$(dequeue) || break  # queue empty
 
-    local job_id type prompt claude_uuid
+    local job_id type prompt claude_uuid cwd
     job_id=$(printf '%s' "$entry" | jq -r '.job_id')
     type=$(printf '%s' "$entry" | jq -r '.type')
     prompt=$(printf '%s' "$entry" | jq -r '.prompt')
     claude_uuid=$(printf '%s' "$entry" | jq -r '.claude_uuid // empty')
+    cwd=$(printf '%s' "$entry" | jq -r '.cwd // empty')
 
     # Guard: skip jobs that were cancelled between enqueue and dispatch
     local meta_status
@@ -244,6 +253,17 @@ dispatch_queue() {
     if [ "$type" != "resume" ]; then
       prompt="$SUB_CLAUDE_AGENT_PREFIX
 $prompt"
+    fi
+
+    # Root pool + new conversation: prepend cwd instruction so the agent works
+    # in the right directory. Skip for resume — the agent already has context.
+    if [ "$type" != "resume" ]; then
+      local cwd_pfx
+      cwd_pfx=$(_cwd_prefix "$cwd")
+      if [ -n "$cwd_pfx" ]; then
+        prompt="$cwd_pfx
+$prompt"
+      fi
     fi
 
     # Send the prompt outside the lock — tmux ops can take seconds.

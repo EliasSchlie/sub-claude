@@ -227,8 +227,9 @@ _auto_init_pool() {
   jq -n \
     --arg job_id "$job_id" \
     --arg prompt "$prompt" \
+    --arg cwd "$cwd" \
     --arg queued_at "$now" \
-    '{job_id: $job_id, type: "new", prompt: $prompt, claude_uuid: null, queued_at: $queued_at}' \
+    '{job_id: $job_id, type: "new", prompt: $prompt, claude_uuid: null, cwd: $cwd, queued_at: $queued_at}' \
     > "$POOL_DIR/queue/000000-${job_id}.json"
 
   # Print ID immediately.
@@ -390,6 +391,17 @@ _dispatch_to_slot() {
   if [ -n "$is_new" ]; then
     prompt="$SUB_CLAUDE_AGENT_PREFIX
 $prompt"
+  fi
+
+  # Root pool: prepend cwd instruction so the agent works in the right directory.
+  if [ -n "$is_new" ]; then
+    local cwd cwd_pfx
+    cwd=$(jq -r '.cwd // empty' "$POOL_DIR/jobs/$job_id/meta.json" 2>/dev/null)
+    cwd_pfx=$(_cwd_prefix "$cwd")
+    if [ -n "$cwd_pfx" ]; then
+      prompt="$cwd_pfx
+$prompt"
+    fi
   fi
 
   # Atomically verify slot is still free + claim it + mark job processing.

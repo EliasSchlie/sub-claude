@@ -54,16 +54,45 @@ get_project_dir() {
 }
 
 # resolve_pool_dir() — set POOL_DIR and TMUX_SOCKET globals.
-# POOL_DIR = $SUB_CLAUDE_STATE_DIR/<hash-of-project-dir>
-# TMUX_SOCKET = sub-claude-<hash>
+#
+# Resolution order:
+#   1. Project-local pool: $SUB_CLAUDE_STATE_DIR/<hash> (if pool.json exists)
+#   2. Root pool: $SUB_CLAUDE_STATE_DIR/_root (shared default)
+#
+# The -C <dir> flag (handled before this is called) overrides get_project_dir,
+# so -C naturally targets a different project-local pool.
 #
 # Call once at startup; all other functions rely on POOL_DIR being set.
 resolve_pool_dir() {
   local project_dir hash
   project_dir=$(get_project_dir)
   hash=$(project_hash "$project_dir")
-  POOL_DIR="$SUB_CLAUDE_STATE_DIR/$hash"
-  TMUX_SOCKET="sub-claude-$hash"
+
+  # Check for project-local pool first
+  if [ -f "$SUB_CLAUDE_STATE_DIR/$hash/pool.json" ]; then
+    POOL_DIR="$SUB_CLAUDE_STATE_DIR/$hash"
+    TMUX_SOCKET="sub-claude-$hash"
+    return
+  fi
+
+  # Fall back to root pool
+  POOL_DIR="$SUB_CLAUDE_STATE_DIR/_root"
+  TMUX_SOCKET="sub-claude-root"
+}
+
+# is_root_pool() — return 0 if current POOL_DIR is the root pool.
+is_root_pool() {
+  [ "$POOL_DIR" = "$SUB_CLAUDE_STATE_DIR/_root" ]
+}
+
+# _cwd_prefix <cwd>
+# For root pool: print the cwd instruction prefix to prepend to a prompt.
+# Prints nothing for project-local pools or empty cwd.
+_cwd_prefix() {
+  local _cwd="$1"
+  if is_root_pool && [ -n "$_cwd" ]; then
+    printf 'IMPORTANT: First run: cd %s\n' "$(printf '%q' "$_cwd")"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -584,10 +613,14 @@ _locked_update_last_activity_at() {
 # ---------------------------------------------------------------------------
 
 # ensure_pool_exists() — die with a helpful hint if the pool has not been
-# initialised for the current project directory.
+# initialised.
 ensure_pool_exists() {
   if [ ! -f "$POOL_DIR/pool.json" ]; then
-    die "no pool found for this project — run 'sub-claude pool init' first"
+    if is_root_pool; then
+      die "no pool found — run 'sub-claude pool init' to create the root pool"
+    else
+      die "no pool found for this project — run 'sub-claude pool init' (root) or 'sub-claude pool init --local' (project-local)"
+    fi
   fi
 }
 

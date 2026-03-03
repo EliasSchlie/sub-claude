@@ -225,3 +225,40 @@ teardown() { _common_teardown; }
   [ "$status" -eq 1 ]
   [[ "$output" == *"--local"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# pool_destroy — root pool
+# ---------------------------------------------------------------------------
+
+@test "pool_destroy accepts _root hash" {
+  SUB_CLAUDE_STATE_DIR="$TEST_DIR/pools"
+  local pool_path="$SUB_CLAUDE_STATE_DIR/_root"
+  mkdir -p "$pool_path/slots"
+  jq -n '{version:1, pool_type:"root", project_dir:"/Users/test", pool_size:2, tmux_socket:"sub-claude-root", slots:[]}' \
+    > "$pool_path/pool.json"
+
+  run pool_destroy "_root"
+  [ "$status" -eq 0 ]
+  [ ! -d "$pool_path" ]
+  [[ "$output" == *"destroyed"* ]]
+}
+
+@test "pool_destroy --all includes root pool" {
+  SUB_CLAUDE_STATE_DIR="$TEST_DIR/pools"
+
+  # Root pool
+  mkdir -p "$SUB_CLAUDE_STATE_DIR/_root/slots"
+  jq -n '{version:1, pool_type:"root", project_dir:"/Users/test", pool_size:2, tmux_socket:"sub-claude-root", slots:[]}' \
+    > "$SUB_CLAUDE_STATE_DIR/_root/pool.json"
+
+  # Local pool
+  local hash="aabb1122"
+  mkdir -p "$SUB_CLAUDE_STATE_DIR/$hash/slots"
+  jq -n '{version:1, pool_type:"local", project_dir:"/tmp/proj", pool_size:2, tmux_socket:"sub-claude-aabb1122", slots:[]}' \
+    > "$SUB_CLAUDE_STATE_DIR/$hash/pool.json"
+
+  run pool_destroy --all
+  [ "$status" -eq 0 ]
+  [ ! -d "$SUB_CLAUDE_STATE_DIR/_root" ]
+  [ ! -d "$SUB_CLAUDE_STATE_DIR/$hash" ]
+}

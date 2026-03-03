@@ -85,6 +85,16 @@ is_root_pool() {
   [ "$POOL_DIR" = "$SUB_CLAUDE_STATE_DIR/_root" ]
 }
 
+# _cwd_prefix <cwd>
+# For root pool: print the cwd instruction prefix to prepend to a prompt.
+# Prints nothing for project-local pools or empty cwd.
+_cwd_prefix() {
+  local _cwd="$1"
+  if is_root_pool && [ -n "$_cwd" ]; then
+    printf 'IMPORTANT: First run: cd %s\n' "$(printf '%q' "$_cwd")"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # ID helpers
 # ---------------------------------------------------------------------------

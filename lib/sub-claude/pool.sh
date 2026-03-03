@@ -920,8 +920,9 @@ pool_destroy() {
 
 _pool_destroy_one() {
   local hash="$1"
-  # Validate hash — only hex characters, no path separators
+  # Validate hash — hex characters or the special "_root" name, no path separators
   case "$hash" in
+    _root) ;;
     *[!0-9a-f]*|'') die "invalid pool hash: '$hash'" ;;
   esac
   local pool_path="$SUB_CLAUDE_STATE_DIR/$hash"

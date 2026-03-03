@@ -368,11 +368,12 @@ $prompt"
   fi
 
   # Root pool: prepend cwd instruction so the agent works in the right directory.
-  if is_root_pool; then
-    local cwd
+  if [ -n "$is_new" ]; then
+    local cwd cwd_pfx
     cwd=$(jq -r '.cwd // empty' "$POOL_DIR/jobs/$job_id/meta.json" 2>/dev/null)
-    if [ -n "$cwd" ]; then
-      prompt="IMPORTANT: First run: cd $(printf '%q' "$cwd")
+    cwd_pfx=$(_cwd_prefix "$cwd")
+    if [ -n "$cwd_pfx" ]; then
+      prompt="$cwd_pfx
 $prompt"
     fi
   fi

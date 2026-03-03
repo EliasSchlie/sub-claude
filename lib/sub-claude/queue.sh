@@ -255,10 +255,15 @@ dispatch_queue() {
 $prompt"
     fi
 
-    # Root pool: prepend cwd instruction so the agent works in the right directory.
-    if is_root_pool && [ -n "$cwd" ]; then
-      prompt="IMPORTANT: First run: cd $(printf '%q' "$cwd")
+    # Root pool + new conversation: prepend cwd instruction so the agent works
+    # in the right directory. Skip for resume — the agent already has context.
+    if [ "$type" != "resume" ]; then
+      local cwd_pfx
+      cwd_pfx=$(_cwd_prefix "$cwd")
+      if [ -n "$cwd_pfx" ]; then
+        prompt="$cwd_pfx
 $prompt"
+      fi
     fi
 
     # Send the prompt outside the lock — tmux ops can take seconds.

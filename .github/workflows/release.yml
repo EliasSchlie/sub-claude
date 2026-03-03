@@ -2,42 +2,51 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
-  bump-version:
+  bump-and-publish:
     runs-on: ubuntu-latest
+    # Skip version-bump commits to avoid infinite loop
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.MARKETPLACE_PAT }}
 
-      - name: Extract and validate version from tag
+      - name: Bump patch version
         id: version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Tag '$GITHUB_REF_NAME' does not match semver pattern vX.Y.Z"
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Update plugin.json version
-        run: |
-          jq --arg v "${{ steps.version.outputs.version }}" \
-            '.version = $v' .claude-plugin/plugin.json > tmp.json \
+          CURRENT=$(jq -r '.version' .claude-plugin/plugin.json)
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+          jq --arg v "$NEW_VERSION" '.version = $v' .claude-plugin/plugin.json > tmp.json \
             && mv tmp.json .claude-plugin/plugin.json
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Bumped $CURRENT → $NEW_VERSION"
 
       - name: Commit version bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .claude-plugin/plugin.json
+          git commit -m "chore: bump plugin version to ${{ steps.version.outputs.version }} [skip ci]"
+          git push origin main
+
+      - name: Update marketplace repo
+        run: |
+          git clone https://x-access-token:${{ secrets.MARKETPLACE_PAT }}@github.com/EliasSchlie/claude-plugins.git /tmp/marketplace
+          cd /tmp/marketplace
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          jq --arg v "${{ steps.version.outputs.version }}" \
+            '(.plugins[] | select(.name == "sub-claude")).version = $v' \
+            .claude-plugin/marketplace.json > tmp.json \
+            && mv tmp.json .claude-plugin/marketplace.json
+          git add .claude-plugin/marketplace.json
           git diff --cached --quiet && exit 0
-          git commit -m "chore: bump plugin version to ${{ steps.version.outputs.version }}"
+          git commit -m "chore: bump sub-claude to ${{ steps.version.outputs.version }}"
           git push origin main

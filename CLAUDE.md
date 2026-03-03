@@ -20,6 +20,22 @@ This repo is also a Claude Code plugin. Structure:
 
 Test locally: `claude --plugin-dir .`
 
+## Versioning & Releases
+
+Plugin version lives in `.claude-plugin/plugin.json`. On every push to `main`, GitHub Actions automatically:
+
+1. Bumps the patch version (e.g. `0.1.5` → `0.1.6`)
+2. Pushes the new version to the marketplace repo (`EliasSchlie/claude-plugins`)
+
+**Manual version bumps** — for major/minor changes, bump the version in `plugin.json` yourself before pushing:
+- Breaking changes → bump major (e.g. `1.0.0` → `2.0.0`)
+- New features → bump minor (e.g. `0.1.0` → `0.2.0`)
+- The CI will then increment from *your* number (e.g. `0.2.0` → `0.2.1` on next push)
+
+**Required secret**: `MARKETPLACE_PAT` — a GitHub PAT with repo access to `EliasSchlie/claude-plugins`.
+
+**Auto-update for users**: Run `/plugin` → Marketplaces → enable auto-update for `elias-tools` (one-time).
+
 ## Rules
 
 - **Never `git add -A` or `git add .`** — always stage specific files by name

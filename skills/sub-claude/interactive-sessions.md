@@ -2,8 +2,6 @@
 
 ## Terminal Interaction
 
-For interactive sessions or when you need to poke at a running Claude:
-
 ```bash
 sub-claude key "$id" Escape            # interrupt, dismiss menu
 sub-claude key "$id" Enter             # confirm
@@ -36,5 +34,3 @@ Each Claude instance only sees the jobs it started:
 - `--all` — every session across all Claude instances in this directory
 
 > `--tree` and `--all` touch sessions from **other Claude instances**. Use sparingly — most workflows should only manage direct children.
-
-Job IDs are scoped to the caller. The pool identifies callers by walking the process tree to the nearest parent `claude` process (PID + start time). Sessions started from a standalone terminal share a `"standalone"` scope.

@@ -19,45 +19,14 @@ Pool state lives in `~/.sub-claude/pools/<project-hash>/`.
 
 ## Cross-Project Targeting
 
-Use `-C <dir>` to manage a pool in a different project directory without `cd`-ing there:
-
-```bash
-sub-claude -C ~/obsidian pool init --size 3
-sub-claude -C ~/obsidian start "organize notes"
-sub-claude -C ~/obsidian pool status
-sub-claude -C ~/obsidian pool stop
-```
-
-`-C` is a routing flag — it targets the other directory's pool. Jobs execute in that directory (where the pool was initialized). Your current project's pool is unaffected.
+`-C <dir>` targets another directory's pool. Jobs execute in that directory (where the pool was initialized), not your current directory. Your current project's pool is unaffected.
 
 ## Queue Pressure
 
 When all slots are busy, jobs queue (FIFO). The pool handles this transparently — jobs run as slots free up.
 
-Watch for this warning on `--block`:
-```
-warning: high queue pressure (3 queued, pool size 5) — not blocking
-hint: expand pool with 'sub-claude pool resize N' or wait explicitly with 'sub-claude wait <id> --quiet'
-```
-
-When you see it: the call returned the ID immediately without blocking. Either `wait <id>` explicitly, or resize the pool.
+When queued jobs reach half the pool size, `--block` degrades to non-blocking and prints a warning. Fix: `wait <id> --quiet` to block reliably, or `pool resize N` to expand.
 
 ## Environment Variables
 
-Pool sessions receive these automatically (set in the per-slot wrapper script):
-
-| Variable | Purpose |
-|----------|---------|
-| `SUB_CLAUDE=1` | Signals pool session context |
-| `SUB_CLAUDE_SLOT=<N>` | Slot index this session runs in |
-| `SUB_CLAUDE_DONE_FILE=<path>` | Path the Stop hook writes to signal completion |
-| `CLAUDE_BELL_OFF=1` | Suppresses notification bell in hooks |
-
-Override these at the CLI level:
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `SUB_CLAUDE_STATE_DIR` | `~/.sub-claude/pools` | Pool metadata root (must be absolute path) |
-| `SUB_CLAUDE_VERBOSITY` | `raw` | Output filter level |
-
-Check `SUB_CLAUDE` to detect whether you're running inside a pool session.
+Check `SUB_CLAUDE=1` to detect whether you're running inside a pool session. Pool sessions also set `SUB_CLAUDE_SLOT`, `SUB_CLAUDE_DONE_FILE`, and `CLAUDE_BELL_OFF` — see `sub-claude --help` for the full list.

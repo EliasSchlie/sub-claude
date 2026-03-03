@@ -7,7 +7,7 @@ description: Use when needing to run Claude instances in parallel or in sequence
 
 A **session-oriented pool** of persistent Claude TUI slots backed by tmux. Solves a fundamental problem: launching a new `claude` process while another Claude session has a Bash tool call in flight silently destroys that call's output. sub-claude pre-starts sessions and reuses them — `start`, `followup`, and `wait` never launch new `claude` processes.
 
-**Key difference from claude-spawn:** pool sessions run interactive TUIs (not `claude -p`). Output is captured terminal content, not JSON. Sessions persist across prompts and support multi-turn conversation via `followup`.
+**Not claude-spawn:** pool sessions are persistent TUIs (not `claude -p`), support multi-turn conversation via `followup`, and never launch new `claude` processes.
 
 **Output parsing:** Use `-v` / `--verbosity` to filter output. Levels: `response` (final model answer only), `conversation` (all prompts + responses), `full` (everything minus TUI chrome), `raw` (default, unfiltered). Example: `sub-claude -v response wait "$id"`
 
@@ -72,26 +72,17 @@ queued → processing → finished(idle) → finished(offloaded)
 
 ## Multi-Turn Conversations
 
-`followup` resumes a finished session with a new prompt — conversation history is preserved.
+`followup` resumes a finished session — conversation history is preserved.
 
-```bash
-id=$(sub-claude start "remember: the password is banana")
-sub-claude wait "$id"
-sub-claude followup "$id" "what's the password?" --block
-```
-
-Rules:
 - Only works on **finished** sessions. Errors if still processing (use `wait` first).
-- If the session was offloaded, a slot is allocated and the session is resumed automatically.
+- If the session was offloaded, a slot is allocated and resumed automatically.
 - Reuses the existing job ID (same session, same conversation).
 
 ## Blocking vs Non-Blocking
 
 **Non-blocking (default):** `start` prints the ID and returns immediately. Use `wait` or `capture` to observe progress.
 
-**`--block`:** waits inline, prints terminal output to stdout. ID goes to stderr. Use when you need the result before continuing.
-
-Under **queue pressure** (queued jobs ≥ half pool size), `--block` degrades to non-blocking and prints a warning. Use `wait <id> --quiet` to block reliably.
+**`--block`:** waits inline, prints terminal output to stdout. ID goes to stderr. Under queue pressure, `--block` degrades to non-blocking — see [pool-management.md](pool-management.md#queue-pressure).
 
 ## Best Practices
 
@@ -111,13 +102,9 @@ Under **queue pressure** (queued jobs ≥ half pool size), `--block` degrades to
 |-----------|------|
 | Interactive key sequences, pinning, multi-instance isolation | [interactive-sessions.md](interactive-sessions.md) |
 | Pool setup, resizing, queue pressure, environment variables | [pool-management.md](pool-management.md) |
+| Reusable custom agents via command scripts | [custom-agents.md](custom-agents.md) |
 | `sub-claude` not found, install/update/uninstall | [installation.md](installation.md) |
 
 ## Feedback & Issues
 
 **File bugs and feature requests** at [github.com/EliasSchlie/sub-claude/issues](https://github.com/EliasSchlie/sub-claude/issues).
-
-Open an issue whenever:
-- Something doesn't work as expected (unexpected errors, wrong behavior, missing output)
-- You hit a usability pain point or confusing workflow
-- You have an idea for how something could work better

@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# Protect sub-claude pool sessions from self-destructive actions:
+# Protect sub-claude pool sessions from problematic tool use:
 # - EnterWorktree (traps slot in wrong directory)
+# - EnterPlanMode (discuss plans inline instead)
+# - AskUserQuestion (ask questions inline with A, B, C options)
 # - sub-claude pool stop/gc/destroy without -C (kills own pool)
+#
+# EnterPlanMode and AskUserQuestion have their own matcher entries
+# in hooks.json. This script handles EnterWorktree|Bash.
 [ "${SUB_CLAUDE:-}" = "1" ] || exit 0
 
 input=$(cat)

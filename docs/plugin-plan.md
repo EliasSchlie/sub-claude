@@ -77,23 +77,16 @@ Inline the done hook (1 line). For guardrails, reference the script — test whe
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "ExitPlanMode|AskUserQuestion",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -n \"${SUB_CLAUDE_DONE_FILE:-}\" ] && touch \"$SUB_CLAUDE_DONE_FILE\" || true",
-            "async": true
-          }
-        ]
+        "matcher": "EnterPlanMode",
+        "hooks": [{ "type": "command", "command": "..." }]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [{ "type": "command", "command": "..." }]
       },
       {
         "matcher": "EnterWorktree|Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash hooks/sub-claude-guardrails.sh"
-          }
-        ]
+        "hooks": [{ "type": "command", "command": "..." }]
       }
     ]
   }

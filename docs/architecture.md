@@ -428,11 +428,7 @@ Two layers: Stop hook (primary, instant) + idle heuristic (fallback, warns).
 
 ### Primary: Done Sentinel Hook
 
-The done sentinel fires **whenever user input is needed** — matching exactly when the notification bell would ring in a normal session. This covers:
-
-- **Stop** — Claude finished a response turn
-- **PreToolUse ExitPlanMode** — Claude proposed a plan (waiting for approval)
-- **PreToolUse AskUserQuestion** — Claude asked a question (waiting for answer)
+The done sentinel fires **when Claude finishes a response turn** (Stop hook). Tools that would require user interaction (EnterPlanMode, AskUserQuestion, ExitPlanMode) are blocked in pool sessions — the model keeps running after a block, so they do **not** signal done.
 
 1. Pool init exports `SUB_CLAUDE_DONE_FILE=$slot_dir/done` in the per-slot wrapper script (before launching `claude`)
 2. Hook writes to the file (see marker protocol below)
@@ -443,18 +439,16 @@ The done sentinel fires **whenever user input is needed** — matching exactly w
 
 **Plugin (`hooks/hooks.json`)** — self-contained, installed automatically:
 - **Stop**: writes `"stop"` into `$SUB_CLAUDE_DONE_FILE` (marker for block detection)
-- **PreToolUse ExitPlanMode|AskUserQuestion**: `touch`es `$SUB_CLAUDE_DONE_FILE` (empty file)
+- **PreToolUse EnterPlanMode**: blocked — "discuss plans inline instead"
+- **PreToolUse AskUserQuestion**: blocked — "ask questions inline with lettered options (A, B, C)"
+- **PreToolUse EnterWorktree**: blocked — worktrees trap the slot in a different directory
+- **PreToolUse Bash**: blocks `sub-claude pool stop/gc/destroy` without `-C` flag
 
 **Dotfiles (legacy)** — if the user has blocking Stop hooks (e.g. `check-improvements.sh`), the done signal for Stop events can be inlined into that hook as `pool_done()`, called only on the `approve` codepath. This avoids premature signals entirely but requires manual wiring.
 
 #### Done file marker protocol
 
-The done file content distinguishes Stop from PreToolUse signals:
-
-| Source | Done file content | Validation |
-|--------|------------------|------------|
-| Stop hook | `"stop\n"` | `wait_for_done` checks raw.log for blocking patterns |
-| PreToolUse hook | empty (0 bytes) | Accepted immediately — never premature |
+The Stop hook writes `"stop\n"` into the done file. `wait_for_done` validates the signal against raw.log for blocking patterns (see below).
 
 #### Stop hook block detection (`_stop_hook_blocked`)
 

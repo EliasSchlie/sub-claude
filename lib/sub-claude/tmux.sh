@@ -519,7 +519,7 @@ IDLE_FALLBACK=30
 # Two-pass check: immediate first, then after 0.5s. The second pass tolerates
 # TUI flush latency — the block message may not be in raw.log immediately
 # after the done file is written. This adds ~0.5s to every Stop-triggered
-# completion. PreToolUse signals bypass this entirely (empty done file).
+# completion.
 #
 # Arguments:
 #   raw_log — path to pipe-pane output log
@@ -550,9 +550,8 @@ _stop_hook_blocked() {
 
 # wait_for_done — block until a job completes or times out.
 #
-# Primary path:   polls for the done sentinel file (written by the Stop hook
-#                 or PreToolUse hook). When the done file contains "stop", it
-#                 was triggered by the Stop event — validate against the raw
+# Primary path:   polls for the done sentinel file (written by the Stop hook).
+#                 When the done file contains "stop", validate against the raw
 #                 log for Stop hook blocking patterns before accepting. This
 #                 prevents premature done signals when another Stop hook
 #                 (e.g. check-improvements.sh) blocks the response.
@@ -589,7 +588,7 @@ wait_for_done() {
   initial_sz="${initial_sz:-0}"
 
   while [ "$w" -lt "$timeout" ]; do
-    # Primary: done sentinel file (written by Stop/PreToolUse hook)
+    # Primary: done sentinel file (written by Stop hook)
     if [ -f "$done_file" ]; then
       # cat piped to tr (not redirect) so 2>/dev/null suppresses ENOENT
       # if the file disappears between -f check and read.
@@ -614,7 +613,7 @@ wait_for_done() {
         fi
       fi
 
-      # PreToolUse-triggered (empty file) or validated Stop — accept.
+      # Validated Stop — accept.
       return 0
     fi
 

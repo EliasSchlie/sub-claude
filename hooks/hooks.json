@@ -13,12 +13,20 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "ExitPlanMode|AskUserQuestion",
+        "matcher": "EnterPlanMode",
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"${SUB_CLAUDE_DONE_FILE:-}\" ] && touch \"$SUB_CLAUDE_DONE_FILE\" || true",
-            "async": true
+            "command": "[ \"${SUB_CLAUDE:-}\" = \"1\" ] || exit 0; printf '{\"decision\":\"block\",\"reason\":\"You are a sub-claude instance. Do not use EnterPlanMode — discuss plans inline instead.\"}'"
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"${SUB_CLAUDE:-}\" = \"1\" ] || exit 0; printf '{\"decision\":\"block\",\"reason\":\"You are a sub-claude instance. Do not use AskUserQuestion — ask questions inline with lettered options (A, B, C).\"}'"
           }
         ]
       },

@@ -159,7 +159,8 @@ _strip_spinner() {
     -e '/^[[:space:]]*\(thinking\)[[:space:]]*$/d' \
     -e '/^[[:space:]]*\(running stop hooks[^)]*\)[[:space:]]*$/d' \
     -e '/^[[:space:]]*·+[[:space:]]*$/d' \
-    -e "/^[[:space:]]*·[[:space:]]*${_sc_labels}…[[:space:]]*\$/d"
+    -e "/^[[:space:]]*·[[:space:]]*${_sc_labels}…[[:space:]]*\$/d" \
+    2>/dev/null
 }
 
 # capture_raw_log — capture full output from a slot's pipe-pane log.

@@ -350,13 +350,21 @@ _truncate_prompt() {
   fi
 }
 
-# _dispatch_to_slot <job_id> <slot> <prompt> — common flow for sending
+# _dispatch_to_slot <job_id> <slot> <prompt> [new] — common flow for sending
 # a prompt to an allocated slot. Atomically verifies the slot is still
 # available, claims it, marks the job as processing, and sends the prompt.
+# If the 4th argument is non-empty (conventionally "new"), the agent identity
+# prefix is prepended to the prompt (first message of a new conversation).
 # Returns 1 if the slot was stolen by another process (caller should
 # fall back to enqueue).
 _dispatch_to_slot() {
-  local job_id="$1" slot="$2" prompt="$3"
+  local job_id="$1" slot="$2" prompt="$3" is_new="${4:-}"
+
+  # Prepend agent identity for new conversations.
+  if [ -n "$is_new" ]; then
+    prompt="$SUB_CLAUDE_AGENT_PREFIX
+$prompt"
+  fi
 
   # Atomically verify slot is still free + claim it + mark job processing.
   # This prevents the race where two callers both allocate_slot() the same
@@ -467,7 +475,7 @@ cmd_start() {
   if slot=$(allocate_slot); then
     prepare_slot_for_new "$slot"
 
-    if _dispatch_to_slot "$id" "$slot" "$prompt"; then
+    if _dispatch_to_slot "$id" "$slot" "$prompt" new; then
       # Capture the UUID that this slot now has.
       local uuid
       uuid=$(read_pool_json | jq -r --argjson idx "$slot" \
@@ -640,7 +648,7 @@ cmd_followup() {
         if slot=$(allocate_slot); then
           prepare_slot_for_new "$slot"
           with_pool_lock _locked_mark_job_not_offloaded "$id"
-          if ! _dispatch_to_slot "$id" "$slot" "$prompt"; then
+          if ! _dispatch_to_slot "$id" "$slot" "$prompt" new; then
             pool_log "session" "$id: slot-$slot stolen during followup, falling back to queue"
             enqueue "$id" "new" "$prompt" >/dev/null
           fi

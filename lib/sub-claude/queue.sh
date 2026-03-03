@@ -240,6 +240,12 @@ dispatch_queue() {
     mkdir -p "$POOL_DIR/jobs/$job_id"
     printf '%s' "$raw_log_offset" > "$POOL_DIR/jobs/$job_id/raw_offset"
 
+    # Prepend agent identity for new conversations.
+    if [ "$type" != "resume" ]; then
+      prompt="$SUB_CLAUDE_AGENT_PREFIX
+$prompt"
+    fi
+
     # Send the prompt outside the lock — tmux ops can take seconds.
     send_prompt "$slot" "$prompt"
 

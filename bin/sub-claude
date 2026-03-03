@@ -74,7 +74,8 @@ Session commands:
 
 Pool management:
   pool init [--size N] [--idle-timeout S] [--ttl S] [--pressure-threshold N]
-                                    Start pool (default: 5 slots, 1800s idle, 7200s TTL)
+                                    Start root pool (default: 5 slots, 1800s idle, 7200s TTL)
+  pool init --local [...]           Start project-local pool (overrides root for this project)
   pool stop                       Kill pool + tmux server
   pool status                     Show pool overview
   pool resize N                   Add or remove slots

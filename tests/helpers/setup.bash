@@ -12,7 +12,8 @@ HELPERS_DIR="$BATS_TEST_DIRNAME/../helpers"
 _common_setup() {
   export TEST_DIR
   TEST_DIR="$(mktemp -d)"
-  export POOL_DIR="$TEST_DIR/pool"
+  export SUB_CLAUDE_STATE_DIR="$TEST_DIR/pools"
+  export POOL_DIR="$TEST_DIR/pools/test-pool"
   export TMUX_SOCKET="test-sub-claude-$$"
   mkdir -p "$POOL_DIR/slots" "$POOL_DIR/jobs" "$POOL_DIR/queue"
 

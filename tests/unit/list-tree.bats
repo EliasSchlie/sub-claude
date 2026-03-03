@@ -71,6 +71,44 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
+# _derive_parent_job_id — SUB_CLAUDE_SLOT fast path
+# ---------------------------------------------------------------------------
+
+@test "_derive_parent_job_id uses SUB_CLAUDE_SLOT when set" {
+  # Create pool.json with a slot pointing to a job
+  jq -n '{version:1, slots:[{index:0, status:"busy", job_id:"slot-job-1"}]}' \
+    > "$POOL_DIR/pool.json"
+  _create_job "slot-job-1" "processing" "session-abc"
+
+  SUB_CLAUDE_SLOT=0 run _derive_parent_job_id "standalone"
+  [ "$status" -eq 0 ]
+  [ "$output" = "slot-job-1" ]
+}
+
+@test "_derive_parent_job_id SUB_CLAUDE_SLOT takes priority over fallback" {
+  # Slot points to slot-job, but there's also a session-matching job
+  jq -n '{version:1, slots:[{index:1, status:"busy", job_id:"slot-job-2"}]}' \
+    > "$POOL_DIR/pool.json"
+  _create_job "slot-job-2" "processing" "session-x"
+  _create_job "fallback-job" "processing" "session-x"
+
+  SUB_CLAUDE_SLOT=1 run _derive_parent_job_id "session-x"
+  [ "$status" -eq 0 ]
+  [ "$output" = "slot-job-2" ]
+}
+
+@test "_derive_parent_job_id falls back when SUB_CLAUDE_SLOT has no job" {
+  # Slot exists but has no job_id assigned
+  jq -n '{version:1, slots:[{index:0, status:"idle", job_id:null}]}' \
+    > "$POOL_DIR/pool.json"
+  _create_job "fallback-job" "processing" "session-y"
+
+  SUB_CLAUDE_SLOT=0 run _derive_parent_job_id "session-y"
+  [ "$status" -eq 0 ]
+  [ "$output" = "fallback-job" ]
+}
+
+# ---------------------------------------------------------------------------
 # cmd_list --tree
 # ---------------------------------------------------------------------------
 

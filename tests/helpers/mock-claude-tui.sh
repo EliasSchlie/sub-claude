@@ -106,6 +106,16 @@ while IFS= read -r line; do
       echo ""
       echo "  Processing: $line"
 
+      # Simulate TUI spinner animation (cursor-overwrite frames).
+      # Real Claude Code emits these via Ink's spinner component.
+      # Each frame overwrites the previous via cursor movement, but in
+      # raw.log they accumulate as separate lines after ANSI stripping.
+      for _sc in ✢ ✳ ✶ ✻ ✽; do
+        printf '\033[1A\r%s(thinking)\r\n' "$_sc"
+      done
+      printf '\033[1A\rForging…\r\n'
+      printf '\033[1A\r· Forging…\r\n'
+
       if [ "$DELAY" -gt 0 ] 2>/dev/null; then
         sleep "$DELAY"
       fi

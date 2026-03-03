@@ -120,9 +120,9 @@ _emit_output() {
   local job_id="$1" slot="${2:-}" terminal="${3:-${SUB_CLAUDE_TERMINAL:-}}"
 
   if [ "$terminal" = "--terminal" ]; then
-    # Old behavior: terminal capture.
+    # Old behavior: terminal capture (with raw.log scrollback recovery).
     if [ -n "$slot" ]; then
-      _emit_pane "$slot"
+      _emit_pane_full "$slot" "$job_id"
     else
       _emit_file "$POOL_DIR/jobs/$job_id/snapshot.log" 2>/dev/null || true
     fi
@@ -138,9 +138,9 @@ _emit_output() {
     fi
   fi
 
-  # Fallback: terminal capture.
+  # Fallback: terminal capture (with raw.log scrollback recovery).
   if [ -n "$slot" ]; then
-    _emit_pane "$slot"
+    _emit_pane_full "$slot" "$job_id"
   elif [ -f "$POOL_DIR/jobs/$job_id/snapshot.log" ]; then
     _emit_file "$POOL_DIR/jobs/$job_id/snapshot.log"
   else
@@ -832,11 +832,17 @@ cmd_capture() {
     queued)
       die "session $id is queued — not yet running"
       ;;
-    processing|"finished(idle)")
+    processing)
       local slot
       slot=$(get_slot_for_job "$id")
       [ -n "$slot" ] || die "session $id: slot not found (internal error)"
       _emit_pane_full "$slot" "$id"
+      ;;
+    "finished(idle)")
+      local slot
+      slot=$(get_slot_for_job "$id")
+      [ -n "$slot" ] || die "session $id: slot not found (internal error)"
+      _emit_output "$id" "$slot"
       ;;
     "finished(offloaded)")
       local snap="$POOL_DIR/jobs/$id/snapshot.log"

@@ -1,11 +1,15 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC2030,SC2031,SC2329
-# Unit tests for _emit_pane_full capture fallback (issue #41).
+# Unit tests for capture: _emit_pane_full fallback and _strip_spinner.
 #
+# _emit_pane_full fallback (issue #41):
 # When a session just started processing, raw.log may not have grown
 # past the byte offset recorded at dispatch time. The offset-based read
 # returns empty, AND capture_pane returns empty (TUI alternate screen).
 # _emit_pane_full should fall back to reading raw.log without the offset.
+#
+# _strip_spinner (issue #27):
+# TUI spinner animation frames pollute raw.log output after ANSI stripping.
 
 load '../helpers/setup'
 load '../helpers/mocks'
@@ -79,4 +83,72 @@ teardown() { _common_teardown; }
 
   output=$(_emit_pane_full "$slot" "$job_id")
   [[ "$output" == *"mock pane output"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# _strip_spinner (issue #27)
+# ---------------------------------------------------------------------------
+
+@test "_strip_spinner removes standalone spinner chars" {
+  local input=$'✢\n✳\n✶\n✻\n✽\nreal content\n✸\n✹\n✺'
+  output=$(printf '%s\n' "$input" | _strip_spinner)
+  [[ "$output" == "real content" ]]
+}
+
+@test "_strip_spinner removes spinner+label combinations" {
+  local input=$'✻Frosting…\n✶(thinking)\n✳Generating…\n✢Forging…\nreal content'
+  output=$(printf '%s\n' "$input" | _strip_spinner)
+  [[ "$output" == "real content" ]]
+}
+
+@test "_strip_spinner removes known standalone labels" {
+  local input=$'(thinking)\nFrosting…\nGenerating…\nForging…\nreal content\nmore content'
+  output=$(printf '%s\n' "$input" | _strip_spinner)
+  # Should keep only real lines
+  [[ "$output" == *"real content"* ]]
+  [[ "$output" == *"more content"* ]]
+  [[ "$output" != *"(thinking)"* ]]
+  [[ "$output" != *"Frosting"* ]]
+  [[ "$output" != *"Forging"* ]]
+}
+
+@test "_strip_spinner preserves unknown standalone labels" {
+  # Labels not in the allowlist should NOT be stripped (safe default)
+  local input=$'Loading…\nCompiling…\nreal content'
+  output=$(printf '%s\n' "$input" | _strip_spinner)
+  [[ "$output" == *"Loading…"* ]]
+  [[ "$output" == *"Compiling…"* ]]
+  [[ "$output" == *"real content"* ]]
+}
+
+@test "_strip_spinner removes middle-dot spinner variants" {
+  local input=$'· Frosting…\n·\nreal content'
+  output=$(printf '%s\n' "$input" | _strip_spinner)
+  [[ "$output" == "real content" ]]
+}
+
+@test "_strip_spinner preserves normal content containing spinner-like words" {
+  local input=$'The user was thinking about the problem\nFrosting the cake is fun\nreal content'
+  output=$(printf '%s\n' "$input" | _strip_spinner)
+  # Lines with spinner words in context (not standalone) should survive
+  [[ "$output" == *"thinking about"* ]]
+  [[ "$output" == *"Frosting the cake"* ]]
+  [[ "$output" == *"real content"* ]]
+}
+
+@test "_strip_spinner in capture_raw_log pipeline filters noise" {
+  local slot=0 job_id="a1b2c3d4"
+  mkdir -p "$POOL_DIR/slots/$slot" "$POOL_DIR/jobs/$job_id"
+
+  # Write raw.log with spinner noise mixed into real content
+  printf '✢\n✳\n✶(thinking)\nFrosting…\nACTUAL RESPONSE\nMore output\n✻\n' \
+    > "$POOL_DIR/slots/$slot/raw.log"
+  echo "0" > "$POOL_DIR/jobs/$job_id/raw_offset"
+
+  output=$(_emit_pane_full "$slot" "$job_id")
+  [[ "$output" == *"ACTUAL RESPONSE"* ]]
+  [[ "$output" == *"More output"* ]]
+  [[ "$output" != *"✢"* ]]
+  [[ "$output" != *"Frosting"* ]]
+  [[ "$output" != *"(thinking)"* ]]
 }

@@ -350,9 +350,11 @@ _truncate_prompt() {
   fi
 }
 
-# _dispatch_to_slot <job_id> <slot> <prompt> — common flow for sending
+# _dispatch_to_slot <job_id> <slot> <prompt> [new] — common flow for sending
 # a prompt to an allocated slot. Atomically verifies the slot is still
 # available, claims it, marks the job as processing, and sends the prompt.
+# If the 4th argument is non-empty (conventionally "new"), the agent identity
+# prefix is prepended to the prompt (first message of a new conversation).
 # Returns 1 if the slot was stolen by another process (caller should
 # fall back to enqueue).
 _dispatch_to_slot() {
@@ -360,7 +362,7 @@ _dispatch_to_slot() {
 
   # Prepend agent identity for new conversations.
   if [ -n "$is_new" ]; then
-    prompt="You are a sub-Claude agent.
+    prompt="$SUB_CLAUDE_AGENT_PREFIX
 $prompt"
   fi
 

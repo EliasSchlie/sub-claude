@@ -242,7 +242,7 @@ dispatch_queue() {
 
     # Prepend agent identity for new conversations.
     if [ "$type" != "resume" ]; then
-      prompt="You are a sub-Claude agent.
+      prompt="$SUB_CLAUDE_AGENT_PREFIX
 $prompt"
     fi
 

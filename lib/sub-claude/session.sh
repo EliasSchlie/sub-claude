@@ -149,6 +149,30 @@ _emit_output() {
   fi
 }
 
+# _derive_parent_job_id <parent_session> — find the active job that spawned us.
+# If parent_session is not 'standalone', looks for a processing job whose
+# parent_session matches. Returns the job ID on stdout, or empty string.
+_derive_parent_job_id() {
+  local parent_session="$1"
+  [ "$parent_session" != 'standalone' ] || return 0
+
+  local jobs_dir="$POOL_DIR/jobs"
+  [ -d "$jobs_dir" ] || return 0
+
+  # Find a processing job whose parent_session matches the caller.
+  local d ps st
+  for d in "$jobs_dir"/*/; do
+    [ -f "$d/meta.json" ] || continue
+    ps=$(jq -r '.parent_session // empty' "$d/meta.json" 2>/dev/null)
+    [ "$ps" = "$parent_session" ] || continue
+    st=$(jq -r '.status // empty' "$d/meta.json" 2>/dev/null)
+    if [ "$st" = "processing" ]; then
+      basename "$d"
+      return 0
+    fi
+  done
+}
+
 # _require_pool — ensure pool exists, or auto-init and return 1.
 # Returns 0 if pool is ready. Returns 1 if auto-init was triggered (caller
 # should queue the job and return immediately).
@@ -170,9 +194,10 @@ _auto_init_pool() {
   mkdir -p "$POOL_DIR/queue" "$POOL_DIR/jobs/$job_id"
 
   # Write meta.json so the job exists.
-  local now parent_session depth cwd
+  local now parent_session parent_job_id depth cwd
   now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   parent_session=$(get_parent_session_id)
+  parent_job_id=$(_derive_parent_job_id "$parent_session")
   depth=0
   cwd=$(pwd)
 
@@ -180,6 +205,7 @@ _auto_init_pool() {
     --arg id "$job_id" \
     --arg prompt "$prompt" \
     --arg parent_session "$parent_session" \
+    --arg parent_job_id "$parent_job_id" \
     --arg cwd "$cwd" \
     --arg created_at "$now" \
     --argjson depth "$depth" \
@@ -187,7 +213,7 @@ _auto_init_pool() {
       id: $id,
       prompt: $prompt,
       parent_session: $parent_session,
-      parent_job_id: null,
+      parent_job_id: (if $parent_job_id == "" then null else $parent_job_id end),
       cwd: $cwd,
       created_at: $created_at,
       status: "queued",
@@ -437,8 +463,9 @@ cmd_start() {
   fi
 
   # Normal path: pool exists.
-  local parent_session depth
+  local parent_session parent_job_id depth
   parent_session=$(get_parent_session_id)
+  parent_job_id=$(_derive_parent_job_id "$parent_session")
   depth=$(derive_depth)
 
   # Create job directory and metadata.
@@ -453,6 +480,7 @@ cmd_start() {
     --arg id "$id" \
     --arg prompt "$prompt" \
     --arg parent_session "$parent_session" \
+    --arg parent_job_id "$parent_job_id" \
     --arg cwd "$cwd" \
     --arg created_at "$now" \
     --argjson depth "$depth" \
@@ -460,7 +488,7 @@ cmd_start() {
       id: $id,
       prompt: $prompt,
       parent_session: $parent_session,
-      parent_job_id: null,
+      parent_job_id: (if $parent_job_id == "" then null else $parent_job_id end),
       cwd: $cwd,
       created_at: $created_at,
       status: "queued",
@@ -1115,25 +1143,37 @@ cmd_list() {
 
   ensure_pool_exists
 
-  local children
-  if $all; then
-    children=$(_get_children --all)
-  elif $tree; then
-    children=$(_get_children --tree)
-  else
-    children=$(_get_children)
-  fi
-
-  [ -n "$children" ] || return 0
-
   if $tree; then
-    # Tree view: print direct children, then indent their descendants.
-    local parent_session
-    parent_session=$(get_parent_session_id)
+    # Tree view: show ALL jobs organized by parent_job_id hierarchy.
+    local all_jobs
+    all_jobs=$(_get_children --all)
+    [ -n "$all_jobs" ] || return 0
 
-    _list_tree_level "$parent_session" ""
+    # Print root-level jobs (no parent_job_id), then recurse into children.
+    local job pjid
+    local roots=()
+    for job in $all_jobs; do
+      pjid=$(jq -r '.parent_job_id // empty' "$POOL_DIR/jobs/$job/meta.json" 2>/dev/null)
+      if [ -z "$pjid" ]; then
+        roots+=("$job")
+      fi
+    done
+
+    local i
+    for i in "${!roots[@]}"; do
+      local is_last=$(( i == ${#roots[@]} - 1 ))
+      _list_tree_node "${roots[$i]}" "" "$is_last"
+    done
   else
     # Flat list.
+    local children
+    if $all; then
+      children=$(_get_children --all)
+    else
+      children=$(_get_children)
+    fi
+    [ -n "$children" ] || return 0
+
     local child
     for child in $children; do
       local status prompt
@@ -1145,32 +1185,60 @@ cmd_list() {
   fi
 }
 
-# _list_tree_level <parent_session_or_job_id> <indent> [--by-job]
-# Recursively print jobs indented.
-_list_tree_level() {
-  local parent="$1" indent="$2" by_job="${3:-}"
+# _list_tree_node <job_id> <prefix> <is_last>
+# Print a single tree node with tree-drawing characters, then recurse.
+_list_tree_node() {
+  local job_id="$1" prefix="$2" is_last="$3" depth="${4:-0}"
   local jobs_dir="$POOL_DIR/jobs"
 
+  # Guard against circular parent_job_id references.
+  if [ "$depth" -gt 20 ]; then
+    printf '%s[max depth exceeded]\n' "$prefix"
+    return 0
+  fi
+
+  local status prompt
+  status=$(get_job_status "$job_id" 2>/dev/null) || return 0
+  prompt=$(jq -r '.prompt // ""' "$jobs_dir/$job_id/meta.json" 2>/dev/null \
+    | _truncate_prompt 60)
+
+  # Draw connector: └─ for last sibling, ├─ for others. No connector at root.
+  local connector=""
+  if [ -n "$prefix" ]; then
+    if [ "$is_last" = "1" ]; then
+      connector="└─ "
+    else
+      connector="├─ "
+    fi
+  fi
+  printf '%s%s%s   %s   %s\n' "$prefix" "$connector" "$job_id" "$status" "$prompt"
+
+  # Find children of this job (by parent_job_id).
+  local child_prefix
+  if [ -z "$prefix" ] && [ "$is_last" = "1" ]; then
+    child_prefix="   "
+  elif [ -z "$prefix" ]; then
+    child_prefix="│  "
+  elif [ "$is_last" = "1" ]; then
+    child_prefix="${prefix}   "
+  else
+    child_prefix="${prefix}│  "
+  fi
+
+  local children=()
+  local d pjid
   for d in "$jobs_dir"/*/; do
     [ -f "$d/meta.json" ] || continue
-    local child_id match_val
-    child_id=$(basename "$d")
-
-    if [ "$by_job" = "--by-job" ]; then
-      match_val=$(jq -r '.parent_job_id // empty' "$d/meta.json" 2>/dev/null)
-    else
-      match_val=$(jq -r '.parent_session // empty' "$d/meta.json" 2>/dev/null)
+    pjid=$(jq -r '.parent_job_id // empty' "$d/meta.json" 2>/dev/null)
+    if [ "$pjid" = "$job_id" ]; then
+      children+=("$(basename "$d")")
     fi
+  done
 
-    if [ "$match_val" = "$parent" ]; then
-      local status prompt
-      status=$(get_job_status "$child_id" 2>/dev/null) || continue
-      prompt=$(jq -r '.prompt // ""' "$d/meta.json" 2>/dev/null \
-        | _truncate_prompt 60)
-      printf '%s%s   %s   %s\n' "$indent" "$child_id" "$status" "$prompt"
-      # Recurse into children of this job.
-      _list_tree_level "$child_id" "${indent}  " "--by-job"
-    fi
+  local ci
+  for ci in "${!children[@]}"; do
+    local child_is_last=$(( ci == ${#children[@]} - 1 ))
+    _list_tree_node "${children[$ci]}" "$child_prefix" "$child_is_last" "$(( depth + 1 ))"
   done
 }
 

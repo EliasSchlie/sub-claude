@@ -132,6 +132,36 @@ _strip_ansi() {
   | sed '/^$/d'
 }
 
+# _strip_spinner — remove TUI spinner animation noise from stripped output.
+#
+# After _strip_ansi removes escape codes, spinner frames remain as plain text
+# because the TUI overwrites them via cursor movement (cursor-back + rewrite).
+# This function removes:
+#   - Lines that are only spinner Unicode chars (✢✳✶✻✽✸✹✺) or middle-dot (·)
+#   - Spinner char + known label combos (e.g. "✻Frosting…", "✶(thinking)")
+#   - Standalone known progress labels (e.g. "Frosting…", "Forging…")
+#   - "(thinking)" and "(running stop hooks…)" standalone lines
+#
+# Known Claude Code spinner labels (add new ones to _sc_labels as observed):
+#   Frosting, Forging, Generating, Thinking, Reasoning, Processing,
+#   Analyzing, Crafting, Building, Creating, Preparing, Computing,
+#   Evaluating, Considering, Synthesizing, Formulating
+#
+# Designed to be piped after _strip_ansi:
+#   ... | _strip_ansi | _strip_spinner
+_strip_spinner() {
+  local _sc_labels='(Frosting|Forging|Generating|Thinking|Reasoning|Processing|Analyzing|Crafting|Building|Creating|Preparing|Computing|Evaluating|Considering|Synthesizing|Formulating)'
+  sed -E \
+    -e '/^[[:space:]]*[✢✳✶✻✽✸✹✺]+[[:space:]]*$/d' \
+    -e "/^[[:space:]]*[✢✳✶✻✽✸✹✺]+[[:space:]]*${_sc_labels}…[[:space:]]*\$/d" \
+    -e '/^[[:space:]]*[✢✳✶✻✽✸✹✺]+\(thinking\)[[:space:]]*$/d' \
+    -e "/^[[:space:]]*${_sc_labels}…[[:space:]]*\$/d" \
+    -e '/^[[:space:]]*\(thinking\)[[:space:]]*$/d' \
+    -e '/^[[:space:]]*\(running stop hooks[^)]*\)[[:space:]]*$/d' \
+    -e '/^[[:space:]]*·+[[:space:]]*$/d' \
+    -e "/^[[:space:]]*·[[:space:]]*${_sc_labels}…[[:space:]]*\$/d"
+}
+
 # capture_raw_log — capture full output from a slot's pipe-pane log.
 #
 # TUI apps (like Claude Code / Ink) use the alternate screen buffer, which
@@ -158,7 +188,7 @@ capture_raw_log() {
     return 1
   fi
 
-  tail -c +"$((byte_offset + 1))" "$raw_log" | _strip_ansi
+  tail -c +"$((byte_offset + 1))" "$raw_log" | _strip_ansi | _strip_spinner
 }
 
 # capture_pane_recent — capture the last N lines of a pane (default: 50).

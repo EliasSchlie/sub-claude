@@ -154,12 +154,25 @@ _emit_output() {
 # parent_session matches. Returns the job ID on stdout, or empty string.
 _derive_parent_job_id() {
   local parent_session="$1"
+
+  # Fast path: inside a pool slot, the slot's current job IS our parent.
+  if [ -n "${SUB_CLAUDE_SLOT:-}" ] && [ -f "$POOL_DIR/pool.json" ]; then
+    local slot_job
+    slot_job=$(jq -r --argjson idx "${SUB_CLAUDE_SLOT}" \
+      '.slots[] | select(.index == $idx) | .job_id // empty' \
+      "$POOL_DIR/pool.json" 2>/dev/null)
+    if [ -n "$slot_job" ]; then
+      printf '%s' "$slot_job"
+      return 0
+    fi
+  fi
+
+  # Fallback: process tree walk (for non-pool callers)
   [ "$parent_session" != 'standalone' ] || return 0
 
   local jobs_dir="$POOL_DIR/jobs"
   [ -d "$jobs_dir" ] || return 0
 
-  # Find a processing job whose parent_session matches the caller.
   local d ps st
   for d in "$jobs_dir"/*/; do
     [ -f "$d/meta.json" ] || continue

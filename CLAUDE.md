@@ -18,7 +18,7 @@ This repo is also a Claude Code plugin. Structure:
 - `hooks/hooks.json` — hook wiring (done signal + guardrails)
 - `hooks/*.sh` — hook scripts (reference copies; hooks.json inlines the logic)
 
-Test locally: `claude --plugin-dir .`
+Test locally: `claude --plugin-dir .` (bypasses marketplace, loads from working directory)
 
 ## Versioning & Releases
 

@@ -85,7 +85,7 @@ State: ~/.sub-claude/pools/<project-hash>/
 | **Job ID** | 8-char hex | Callers (models) | `a1b2c3d4` |
 | **Claude UUID** | Standard UUID | Orchestrator internally (for `/resume`) | `550e8400-e29b-41d4-a716-446655440000` |
 
-Job IDs are what callers see in `start`, `followup`, `list`, etc. Claude UUIDs are extracted via `/status` and stored in metadata for `/resume`. For debugging, `sub-claude uuid <id>` prints full internal state:
+Job IDs are what callers see in `start`, `followup`, `list`, etc. Claude UUIDs are extracted via PID-file mapping (see [UUID Extraction](#claude-uuid-extraction)) and stored in metadata for `/resume`. For debugging, `sub-claude uuid <id>` prints full internal state:
 ```
 claude-uuid: 550e8400-e29b-41d4-a716-446655440000 | slot: 2 | status: idle
 ```
@@ -338,7 +338,7 @@ Queue entry (`queue/NNN-<id>.json`):
 
 | Field | Values | Description |
 |-------|--------|-------------|
-| `type` | `"new"` | New conversation — needs a fresh slot (`/clear` → `/status`) |
+| `type` | `"new"` | New conversation — needs a fresh slot (`/clear` → extract UUID) |
 | `type` | `"resume"` | Resume offloaded session — needs `/resume <claude_uuid>` |
 | `claude_uuid` | (only for `resume`) | Target Claude UUID to `/resume` into |
 | `prompt` | string | Text to send after slot is ready |
@@ -357,9 +357,9 @@ When a queued job needs a fresh session (no existing Claude UUID to resume):
 2. **Escape** — always send `Escape` (harmless no-op at normal prompt, exits interactive menus)
 3. **Capture snapshot** → store in `jobs/<id>/snapshot.log`
 4. Mark old job as `offloaded: true`
-5. **`/clear`** — starts a new conversation
-6. **`/status`** → extract new Claude UUID (always after `/clear`!)
-7. Escape status menu → fresh session is ready for use
+5. **Invalidate PID file** — remove `~/.claude/session-pids/<pid>` so extract_uuid waits for the new UUID
+6. **`/clear`** — starts a new conversation (triggers `SessionStart` hook → writes new UUID)
+7. **Extract UUID** via PID-file mapping (instant) or `/status` fallback
 
 ### Offload → Resume existing session
 
@@ -394,7 +394,7 @@ When a prompt arrives (`start` or `followup`), the orchestrator tries to handle 
 
 **`start`** — new session:
 1. **Fresh slot available?** → use it directly. No offloading needed — send prompt.
-2. **Idle slot available (no fresh)?** → offload its session (Escape → snapshot → `/clear` → `/status` → slot becomes fresh) → send prompt.
+2. **Idle slot available (no fresh)?** → offload its session (Escape → snapshot → `/clear` → extract UUID → slot becomes fresh) → send prompt.
 3. **All slots busy** → queue.
 
 > The queue only comes into play when ALL slots are busy. In a pool of 5 with 2 busy, there are 3 idle slots available — no queueing needed.
@@ -404,7 +404,7 @@ When a prompt arrives (`start` or `followup`), the orchestrator tries to handle 
 When a slot becomes idle (Stop hook fires) and the queue is non-empty:
 1. Dequeue next job (FIFO)
 2. If job targets an offloaded session → Escape → snapshot → `/resume <target-uuid>` → send prompt
-3. If job is new → Escape → snapshot → `/clear` → `/status` (extract new UUID) → send prompt
+3. If job is new → Escape → snapshot → `/clear` → extract UUID → send prompt
 
 ### Queue pressure
 
@@ -600,7 +600,7 @@ sub-claude clean "$id" --force-all     # stop + clean everything depth-first
 For each session (depth-first, children before parent):
 1. If loaded and busy → error (or stop if `--force`/`--force-all`)
 2. If loaded and idle → run offloading flow (Escape → snapshot)
-3. Run clearing flow on the slot → `/clear` → `/status` → extract UUID → Escape → slot becomes `fresh`
+3. Run clearing flow on the slot → `/clear` → extract UUID → slot becomes `fresh`
 4. If offloaded → just remove metadata (slot already freed)
 5. Remove job from `list` visibility
 
@@ -616,7 +616,7 @@ When a Claude process in a slot dies (OOM, bug, network error), the slot becomes
 **Recovery threshold**: when ≥ 1/4 of pool slots are `error`, restart them all together:
 1. Kill all errored panes
 2. Create new panes, launch `claude --dangerously-skip-permissions`
-3. Accept trust prompt, `/status` → extract UUID → Escape → `fresh`
+3. Accept trust prompt → extract UUID (via PID-file mapping) → `fresh`
 4. Log: `[watcher] crash recovery: restarted N slots`
 
 > ⚠️ Crash recovery runs `claude` — may disrupt Bash tool output from other sessions in this directory.
@@ -654,16 +654,20 @@ If no pool exists when `start` is called:
 
 ### Claude UUID Extraction
 
-After `/clear` or on init, run `/status` to get the Claude UUID (needed for future `/resume`):
+After `/clear` or on init, extract the Claude UUID (needed for future `/resume`).
+
+**Fast path: PID-file mapping (<1s).** A `SessionStart` hook (in `hooks/hooks.json`) writes the session UUID to `~/.claude/session-pids/$PPID` whenever a session starts (`/clear`, `/resume`, initial launch). Since `run.sh` uses `exec claude`, the tmux `pane_pid` = the Claude process PID = `$PPID` from the hook's perspective. `extract_uuid` reads `~/.claude/session-pids/<pane_pid>` to get the UUID instantly.
+
 ```bash
-tmux send-keys -t slot-N "/status" Enter
-sleep 3
-pane=$(tmux capture-pane -t slot-N -p -S -50)
-uuid=$(printf '%s' "$pane" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | tail -1)
-# Dismiss status menu AFTER extracting UUID
-tmux send-keys -t slot-N Escape
-sleep 0.5
+# How it works internally:
+pid=$(tmux list-panes -t slot-N -F '#{pane_pid}')
+uuid=$(cat ~/.claude/session-pids/$pid)
 ```
+
+Before `/clear`, the PID file is invalidated (`rm -f`) so `extract_uuid` polls until the new session's `SessionStart` hook writes a fresh UUID.
+
+**Fallback: `/status` parsing (~10-30s).** If the PID file is unavailable (hook didn't fire, non-plugin install), falls back to sending `/status` to the TUI and regex-matching the UUID from pane output. Includes warmup step and up to 3 retries with escalating delays.
+
 Always extract UUID after `/clear` — the old UUID is gone. Not needed after `/resume` (UUID is already known).
 
 ### Trust Prompt Auto-Accept
@@ -680,7 +684,7 @@ done
 
 **Primary: raw.log** — `capture_raw_log()` reads pipe-pane output directly, strips ANSI escapes, and returns clean text. This bypasses tmux's alternate screen buffer (which Claude Code's TUI uses), recovering full scrollback that `capture-pane` cannot access. A byte offset recorded at dispatch time (`raw_offset` in `meta.json`) isolates the current job's output from previous sessions in the same slot.
 
-**Fallback: capture-pane** — used when raw.log is unavailable or for lightweight checks (trust prompt detection, `/status` hash comparison). All `capture-pane` calls use `-S -100000` for effectively unlimited scrollback:
+**Fallback: capture-pane** — used when raw.log is unavailable or for lightweight checks (trust prompt detection, `/resume` hash comparison). All `capture-pane` calls use `-S -100000` for effectively unlimited scrollback:
 ```bash
 tmux capture-pane -t "$slot_target" -p -S -100000
 ```
@@ -689,7 +693,7 @@ tmux capture-pane -t "$slot_target" -p -S -100000
 - `cmd_capture` (processing) → `_emit_pane_full()` → `capture_raw_log()` with capture-pane fallback
 - `cmd_capture` (idle) → `_emit_pane_full()` → same path
 - `take_snapshot` (offload) → `capture_raw_log()` with capture-pane fallback
-- UUID extraction → `capture-pane -S -50` (only needs last few lines)
+- UUID extraction → PID-file mapping (fast path); `capture-pane -S -50` only in `/status` fallback
 
 ### Prompt Sending
 
@@ -704,8 +708,8 @@ Always send Escape before offloading — harmless at normal prompt, exits any in
 tmux send-keys -t slot-N Escape
 sleep 0.5
 # capture snapshot, then either:
-#   /clear → /status  (new conversation)
-#   /resume <uuid>    (switch to existing session)
+#   /clear → extract UUID  (new conversation)
+#   /resume <uuid>         (switch to existing session)
 ```
 
 ### Locking
@@ -802,7 +806,7 @@ claude --dangerously-skip-permissions
 for i in 0..N-1; do init_slot $i & ; done; wait
 ```
 
-Each `init_slot`: write `run.sh` → start tmux pane running it → accept trust prompt → wait ready → `/status` → extract UUID → Escape (dismiss status menu) → slot is `fresh`.
+Each `init_slot`: write `run.sh` → start tmux pane running it → accept trust prompt → wait ready → extract UUID (via PID-file mapping) → slot is `fresh`.
 
 After all slots ready, start the background watcher.
 

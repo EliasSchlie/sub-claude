@@ -52,10 +52,12 @@ The plugin handles Claude Code integration. The CLI binary needs a separate inst
 ```bash
 git clone https://github.com/EliasSchlie/sub-claude.git
 cd sub-claude
-./install.sh
+./install.sh          # copies to ~/.local/{bin,lib}
+# or
+./install.sh --link   # symlinks binary (updates via git pull, no reinstall)
 ```
 
-This installs to `~/.local/bin/` and `~/.local/lib/`. Use `--prefix /usr/local` for system-wide install.
+Use `--prefix /usr/local` for system-wide install. With `--link`, the binary symlinks to the repo and resolves its lib dir automatically — `git pull` is all you need to update.
 
 ### Prerequisites
 

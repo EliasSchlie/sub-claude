@@ -10,13 +10,24 @@ Session-oriented pool of persistent Claude TUI slots backed by tmux.
 - Manual testing of pool commands: see [docs/manual-testing.md](docs/manual-testing.md)
 - Worktrees go in `.wt/<name>` (gitignored). Not `.claude/worktrees/`.
 
+## Deployment
+
+Two deployment channels — CLI and plugin update independently:
+
+| Component | What | How it updates |
+|-----------|------|----------------|
+| **Plugin** | hooks, skills | Push to `main` → CI bumps version → marketplace → auto-update |
+| **CLI** | `bin/sub-claude`, `lib/` | `git pull` (if installed with `./install.sh --link`) |
+
+The bin script resolves symlinks via `readlink -f` to find its sibling `lib/` dir.
+
 ## Plugin
 
 This repo is also a Claude Code plugin. Structure:
 
 - `.claude-plugin/plugin.json` — manifest
 - `skills/sub-claude/` — skill docs (SKILL.md + sub-skills)
-- `hooks/hooks.json` — hook wiring (done signal + guardrails)
+- `hooks/hooks.json` — hook wiring (done signal, guardrails, SessionStart PID mapping)
 - `hooks/*.sh` — hook scripts (reference copies; hooks.json inlines the logic)
 
 Test locally: `claude --plugin-dir .` (bypasses marketplace, loads from working directory)

@@ -14,12 +14,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREFIX="${HOME}/.local"
 UNINSTALL=false
+LINK=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --prefix)
       [[ $# -ge 2 ]] || { echo "install.sh: --prefix requires an argument" >&2; exit 1; }
       PREFIX="$2"; shift 2 ;;
+    --link) LINK=true; shift ;;
     --uninstall) UNINSTALL=true; shift ;;
     -h|--help)
       cat <<'EOF'
@@ -27,13 +29,14 @@ Usage: ./install.sh [options]
 
 Options:
   --prefix DIR    Install prefix (default: ~/.local)
+  --link          Symlink instead of copy (for development — updates via git pull)
   --uninstall     Remove installed files
   -h, --help      Show this help
 
 Installs:
-  <prefix>/bin/sub-claude              CLI binary
-  <prefix>/lib/sub-claude/             Pool library
-  <prefix>/lib/claude-output/          Output parser library
+  <prefix>/bin/sub-claude              CLI binary (or symlink with --link)
+  <prefix>/lib/sub-claude/             Pool library (not needed with --link)
+  <prefix>/lib/claude-output/          Output parser library (not needed with --link)
   <prefix>/share/sub-claude/           Claude Code plugin (hooks + skills)
 EOF
       exit 0 ;;
@@ -58,22 +61,34 @@ if $UNINSTALL; then
   exit 0
 fi
 
-echo "Installing sub-claude to $PREFIX..."
+if $LINK; then
+  echo "Symlinking sub-claude to $PREFIX (dev mode)..."
+else
+  echo "Installing sub-claude to $PREFIX..."
+fi
 
-# Create directories
-mkdir -p "$BIN_DIR" "$LIB_DIR/sub-claude" "$LIB_DIR/claude-output"
+mkdir -p "$BIN_DIR"
 
-# Install binary
-cp "$SCRIPT_DIR/bin/sub-claude" "$BIN_DIR/sub-claude"
-chmod +x "$BIN_DIR/sub-claude"
-
-# Install libraries
-cp "$SCRIPT_DIR/lib/sub-claude/"*.sh "$LIB_DIR/sub-claude/"
-cp "$SCRIPT_DIR/lib/claude-output/"*.sh "$LIB_DIR/claude-output/"
-
-echo "  Installed binary:  $BIN_DIR/sub-claude"
-echo "  Installed libs:    $LIB_DIR/sub-claude/"
-echo "                     $LIB_DIR/claude-output/"
+if $LINK; then
+  # Dev mode: symlink the binary. The bin script resolves symlinks via
+  # readlink -f to find its sibling lib/ dir, so no lib install needed.
+  rm -f "$BIN_DIR/sub-claude"
+  ln -s "$SCRIPT_DIR/bin/sub-claude" "$BIN_DIR/sub-claude"
+  # Clean up any previously copied libs (no longer needed)
+  rm -rf "$LIB_DIR/sub-claude" "$LIB_DIR/claude-output"
+  echo "  Symlinked binary:  $BIN_DIR/sub-claude -> $SCRIPT_DIR/bin/sub-claude"
+  echo "  Removed libs (resolved via symlink)"
+else
+  # Standard mode: copy binary and libraries
+  mkdir -p "$LIB_DIR/sub-claude" "$LIB_DIR/claude-output"
+  cp "$SCRIPT_DIR/bin/sub-claude" "$BIN_DIR/sub-claude"
+  chmod +x "$BIN_DIR/sub-claude"
+  cp "$SCRIPT_DIR/lib/sub-claude/"*.sh "$LIB_DIR/sub-claude/"
+  cp "$SCRIPT_DIR/lib/claude-output/"*.sh "$LIB_DIR/claude-output/"
+  echo "  Installed binary:  $BIN_DIR/sub-claude"
+  echo "  Installed libs:    $LIB_DIR/sub-claude/"
+  echo "                     $LIB_DIR/claude-output/"
+fi
 
 # Install Claude Code plugin (hooks + skills)
 rm -rf "$SHARE_DIR"

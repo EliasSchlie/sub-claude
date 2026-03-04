@@ -11,7 +11,9 @@ command -v sub-claude && sub-claude --help
 ```bash
 git clone https://github.com/EliasSchlie/sub-claude.git
 cd sub-claude
-./install.sh
+./install.sh          # copies to ~/.local/{bin,lib}
+# or
+./install.sh --link   # symlinks binary (updates via git pull, no reinstall)
 ```
 
 Ensure `~/.local/bin` is in your PATH. The installer warns if it isn't.
@@ -27,8 +29,10 @@ sub-claude --help
 ```bash
 cd /path/to/sub-claude
 git pull
-./install.sh
+./install.sh          # only needed for copy installs
 ```
+
+With `--link` installs, `git pull` is sufficient — the symlink resolves to the repo automatically.
 
 ## Uninstall
 

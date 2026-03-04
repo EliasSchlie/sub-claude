@@ -151,7 +151,7 @@ _strip_ansi() {
 #   ... | _strip_ansi | _strip_spinner
 _strip_spinner() {
   local _sc_labels='(Frosting|Forging|Generating|Thinking|Reasoning|Processing|Analyzing|Crafting|Building|Creating|Preparing|Computing|Evaluating|Considering|Synthesizing|Formulating)'
-  sed -E \
+  LC_ALL=C sed -E \
     -e '/^[[:space:]]*[✢✳✶✻✽✸✹✺]+[[:space:]]*$/d' \
     -e "/^[[:space:]]*[✢✳✶✻✽✸✹✺]+[[:space:]]*${_sc_labels}…[[:space:]]*\$/d" \
     -e '/^[[:space:]]*[✢✳✶✻✽✸✹✺]+\(thinking\)[[:space:]]*$/d' \

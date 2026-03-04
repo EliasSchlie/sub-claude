@@ -196,6 +196,31 @@ _require_pool() {
   return 1
 }
 
+# _ensure_pool_healthy — check that the pool's watcher and tmux server are alive.
+# Returns 0 if healthy (or after successful watcher restart).
+# Returns 1 if tmux server is dead (caller should do full reinit).
+_ensure_pool_healthy() {
+  if is_pool_running; then
+    return 0
+  fi
+
+  # Pool exists but is unhealthy. Check what's broken.
+  # Note: no lock around recovery — concurrent cmd_start calls could race here.
+  # The window is narrow and the worst case is a redundant watcher restart.
+  if tmux_cmd has-session 2>/dev/null; then
+    # tmux alive, watcher dead → restart watcher only
+    warn "pool watcher stopped — restarting..."
+    if ! watcher_start; then
+      warn "watcher restart failed — falling back to full reinit"
+      return 1
+    fi
+    return 0
+  fi
+
+  # Both tmux and watcher are dead → caller must reinit
+  return 1
+}
+
 # _auto_init_pool <job_id> <prompt> — queue the job and launch pool init
 # in the background. Prints job ID to stdout and returns.
 _auto_init_pool() {
@@ -487,7 +512,19 @@ cmd_start() {
     return 0
   fi
 
-  # Normal path: pool exists.
+  # Pool exists — ensure it's healthy before dispatching.
+  if ! _ensure_pool_healthy; then
+    # tmux server dead → full reinit
+    warn "pool unhealthy (tmux server dead) — reinitializing..."
+    pool_stop 2>/dev/null || true
+    _auto_init_pool "$id" "$prompt"
+    if $block; then
+      warn "reinit in progress — --block degraded to non-blocking. Use 'sub-claude wait $id' after pool is ready."
+    fi
+    return 0
+  fi
+
+  # Normal path: pool exists and is healthy.
   local parent_session parent_job_id depth
   parent_session=$(get_parent_session_id)
   parent_job_id=$(_derive_parent_job_id "$parent_session")
@@ -661,6 +698,11 @@ cmd_followup() {
 
   validate_id "$id"
   ensure_pool_exists
+
+  # Ensure pool is healthy before dispatching work.
+  if ! _ensure_pool_healthy; then
+    die "pool unhealthy (tmux server dead) — run 'sub-claude pool stop && sub-claude pool init' to reinitialize"
+  fi
 
   local status
   status=$(get_job_status "$id")

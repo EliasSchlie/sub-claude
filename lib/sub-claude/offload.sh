@@ -70,6 +70,10 @@ offload_to_new() {
     with_pool_lock _locked_mark_job_offloaded "$job_id"
   fi
 
+  # Invalidate the PID→UUID file before /clear so extract_uuid waits for
+  # the new session's UUID instead of returning the stale one.
+  invalidate_session_pidfile "$slot"
+
   # Start a new conversation in this slot.
   # Guard: send_slash_clear returns 1 on exhausted retries; don't crash under
   # set -e — proceeding with a stale session is better than dying.

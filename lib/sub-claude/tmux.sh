@@ -214,11 +214,70 @@ is_pane_alive() {
 # Claude session UUID extraction
 # ---------------------------------------------------------------------------
 
+# SESSION_PID_DIR — directory where the SessionStart hook writes PID→UUID maps.
+SESSION_PID_DIR="$HOME/.claude/session-pids"
+
+# _get_pane_pid — get the PID of the process running in a slot's tmux pane.
+# After `exec claude` in run.sh, this is the Claude process PID.
+_get_pane_pid() {
+  local slot="$1"
+  tmux_cmd list-panes -t "$(slot_target "$slot")" -F '#{pane_pid}' 2>/dev/null | head -1
+}
+
+# invalidate_session_pidfile — remove the PID→UUID mapping for a slot.
+# Call before /clear so extract_uuid waits for the new session's UUID
+# instead of reading the stale one.
+invalidate_session_pidfile() {
+  local slot="$1"
+  local pid
+  pid=$(_get_pane_pid "$slot")
+  [ -n "$pid" ] && rm -f "$SESSION_PID_DIR/$pid"
+}
+
+# _extract_uuid_via_pidfile — read session UUID from the SessionStart hook's
+# PID mapping file. Polls for up to $2 seconds (default: 5).
+#
+# The SessionStart hook (in hooks.json) writes the session_id to
+# ~/.claude/session-pids/$PPID on every session start (/clear, /resume,
+# initial launch). Since run.sh uses `exec claude`, the tmux pane_pid
+# equals the Claude process PID equals $PPID from the hook's perspective.
+#
+# Returns 0 and prints UUID on success, 1 on timeout.
+_extract_uuid_via_pidfile() {
+  local slot="$1" max_wait="${2:-5}"
+  local pid pid_file uuid start_s=$SECONDS
+
+  pid=$(_get_pane_pid "$slot")
+  if [ -z "$pid" ]; then
+    pool_log "extract_uuid" "slot-$slot: could not get pane PID"
+    return 1
+  fi
+
+  pid_file="$SESSION_PID_DIR/$pid"
+
+  while [ $((SECONDS - start_s)) -lt "$max_wait" ]; do
+    # Read directly — avoids TOCTOU and useless cat fork
+    uuid=$(tr -d '[:space:]' < "$pid_file" 2>/dev/null) || true
+    if [ -n "$uuid" ]; then
+      printf '%s' "$uuid"
+      return 0
+    fi
+
+    # Bail early if the Claude process died
+    kill -0 "$pid" 2>/dev/null || {
+      pool_log "extract_uuid" "slot-$slot: pane PID $pid is dead, aborting pidfile wait"
+      return 1
+    }
+
+    sleep 0.5
+  done
+
+  return 1
+}
+
+# --- Fallback: /status-based extraction (used when PID file unavailable) ---
+
 # _send_status_cmd — type /status, wait for autocomplete, press Enter.
-# Shared helper for extract_uuid's warmup and real attempts.
-# $2 (optional): autocomplete delay in seconds (default: 1). Callers
-# should scale this with attempt number — 1s is too short on retries
-# and causes "/status" to be submitted as literal user input.
 _send_status_cmd() {
   local target="$1" delay="${2:-1}"
   _clear_input "$target"
@@ -228,25 +287,15 @@ _send_status_cmd() {
 }
 
 # _poll_for_uuid — poll pane content until a UUID appears or timeout.
-# Captures pane every 0.5s for up to $2 seconds (default: 8).
-# Prints the UUID to stdout if found, or nothing on timeout.
 _poll_for_uuid() {
   local slot="$1" max_wait="${2:-8}"
   local start_s=$SECONDS pane uuid
   while [ $((SECONDS - start_s)) -lt "$max_wait" ]; do
     pane=$(capture_pane_recent "$slot" 50)
-
-    # Prefer the labeled "Session ID:" line for precision.
-    # Use tail -1 to get the most recent match — older /status output may
-    # still be visible in the viewport after clear_scrollback (which only
-    # clears the scrollback buffer, not the visible pane content).
     uuid=$(printf '%s' "$pane" | grep -i 'Session ID:' | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | tail -1)
-
-    # Fall back to any UUID on screen
     if [ -z "$uuid" ]; then
       uuid=$(printf '%s' "$pane" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | tail -1)
     fi
-
     if [ -n "$uuid" ]; then
       printf '%s' "$uuid"
       return 0
@@ -255,30 +304,15 @@ _poll_for_uuid() {
   done
 }
 
-# extract_uuid — send /status, wait for output, parse the Claude session UUID.
-#
-# Strategy:
-#   1. Warmup (unless --skip-warmup): send /status once and dismiss. The first
-#      /status in a fresh session gets hijacked by skill autocomplete (resolves
-#      to "Error: Skill status is not a prompt-based skill"). The warmup burns
-#      this one-time error so subsequent /status calls work correctly.
-#      Skip warmup when called from offload paths (session already warmed up).
-#   2. Real attempts (up to 3): send /status with attempt-scaled autocomplete
-#      delay, poll pane content every 0.5s for a UUID (up to 8s), dismiss.
-#
-# Prints the UUID to stdout, or an empty string on failure.
-# Always extract UUID after /clear — the old UUID is invalidated.
-extract_uuid() {
-  local slot="$1" skip_warmup=false
-  [ "${2:-}" = "--skip-warmup" ] && skip_warmup=true
+# _extract_uuid_via_status — legacy /status-based UUID extraction.
+# Sends /status to the TUI, polls pane output for a UUID regex match.
+# Slow (~10-30s) and fragile — used only as fallback when PID file is unavailable.
+_extract_uuid_via_status() {
+  local slot="$1" skip_warmup="${2:-false}"
   local target
   target=$(slot_target "$slot")
 
-  if ! $skip_warmup; then
-    # Warmup: burn the first-/status skill autocomplete error (B5).
-    # Send /status, wait briefly for the error to render, then dismiss.
-    # Use delay=2 (not the default 1) — 1s is too short and causes "/status"
-    # to be submitted as literal user input instead of a slash command.
+  if [ "$skip_warmup" != "true" ]; then
     _send_status_cmd "$target" 2
     sleep 2
     tmux_cmd send-keys -t "$target" Escape
@@ -287,29 +321,48 @@ extract_uuid() {
 
   local attempt uuid
   for attempt in 1 2 3; do
-    # Scale autocomplete delay with attempt (2s, 3s, 4s). Too short and
-    # "/status" is submitted as literal user input instead of a slash command.
     _send_status_cmd "$target" $((attempt + 1))
-
-    # Poll for UUID instead of a fixed sleep
     uuid=$(_poll_for_uuid "$slot" 8)
-
-    # Dismiss the status overlay
     tmux_cmd send-keys -t "$target" Escape
     sleep 0.5
 
     if [ -n "$uuid" ]; then
-      pool_log "extract_uuid" "slot-$slot: uuid=$uuid (attempt $attempt)"
+      pool_log "extract_uuid" "slot-$slot: uuid=$uuid (via /status, attempt $attempt)"
       echo "$uuid"
       return 0
     fi
-
-    pool_log "extract_uuid" "slot-$slot: attempt $attempt failed, retrying..."
+    pool_log "extract_uuid" "slot-$slot: /status attempt $attempt failed, retrying..."
     sleep 2
   done
 
-  pool_log "extract_uuid" "slot-$slot: FAILED after 3 attempts"
-  echo ""
+  pool_log "extract_uuid" "slot-$slot: FAILED after 3 /status attempts"
+  return 1
+}
+
+# extract_uuid — get the Claude session UUID for a slot.
+#
+# Fast path: read from ~/.claude/session-pids/<pane_pid> (written by the
+#   SessionStart hook). Instant after session start, ~0.5s polling otherwise.
+# Fallback:  send /status to the TUI and parse the output (~10-30s).
+#
+# Accepts --skip-warmup for backward compat (ignored on the fast path,
+# passed through to the /status fallback).
+extract_uuid() {
+  local slot="$1" skip_warmup=false
+  [ "${2:-}" = "--skip-warmup" ] && skip_warmup=true
+
+  # Fast path: PID file
+  local uuid
+  if uuid=$(_extract_uuid_via_pidfile "$slot"); then
+    pool_log "extract_uuid" "slot-$slot: uuid=$uuid (via pid-map)"
+    echo "$uuid"
+    return 0
+  fi
+
+  # Fallback: /status method
+  pool_log "extract_uuid" "slot-$slot: pid-map unavailable, falling back to /status"
+  uuid=$(_extract_uuid_via_status "$slot" "$skip_warmup") || true
+  echo "$uuid"
 }
 
 # ---------------------------------------------------------------------------

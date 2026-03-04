@@ -20,6 +20,7 @@ is_pane_alive() { return 0; }
 
 # UUID extraction — return a fixed UUID
 extract_uuid() { echo "550e8400-e29b-41d4-a716-446655440000"; }
+invalidate_session_pidfile() { return 0; }
 
 # Trust / session lifecycle
 accept_trust_prompt() { return 0; }

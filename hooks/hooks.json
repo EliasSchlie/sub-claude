@@ -1,5 +1,15 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mkdir -p \"$HOME/.claude/session-pids\" && jq -r '.session_id // empty' | head -1 | { read -r sid; [ -n \"$sid\" ] && printf '%s' \"$sid\" > \"$HOME/.claude/session-pids/$PPID\"; } || true"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

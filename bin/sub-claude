@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Resolve lib dir: prefer sibling lib/ next to bin/, fall back to ~/.local/lib/
-_bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve lib dir: follow symlinks to find the real bin location, then look for
+# sibling lib/. This lets ~/.local/bin/sub-claude be a symlink to the repo.
+_bin_dir="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || realpath "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")" && pwd)"
 SUB_CLAUDE_LIB="${_bin_dir}/../lib/sub-claude"
 if [[ ! -d "$SUB_CLAUDE_LIB" ]]; then
   SUB_CLAUDE_LIB="$HOME/.local/lib/sub-claude"

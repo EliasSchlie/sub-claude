@@ -5,53 +5,10 @@ on:
     branches: [main]
 
 jobs:
-  bump-and-publish:
-    runs-on: ubuntu-latest
-    # Skip version-bump commits to avoid infinite loop
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
-    steps:
-      - name: Generate app token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          repositories: sub-claude,claude-plugins
-
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-
-      - name: Bump patch version
-        id: version
-        run: |
-          CURRENT=$(jq -r '.version' .claude-plugin/plugin.json)
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
-          NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
-          jq --arg v "$NEW_VERSION" '.version = $v' .claude-plugin/plugin.json > tmp.json \
-            && mv tmp.json .claude-plugin/plugin.json
-          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Bumped $CURRENT → $NEW_VERSION"
-
-      - name: Commit version bump
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .claude-plugin/plugin.json
-          git commit -m "chore: bump plugin version to ${{ steps.version.outputs.version }} [skip ci]"
-          git push origin main
-
-      - name: Update marketplace repo
-        run: |
-          git clone https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/EliasSchlie/claude-plugins.git /tmp/marketplace
-          cd /tmp/marketplace
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          jq --arg v "${{ steps.version.outputs.version }}" \
-            '(.plugins[] | select(.name == "sub-claude")).version = $v' \
-            .claude-plugin/marketplace.json > tmp.json \
-            && mv tmp.json .claude-plugin/marketplace.json
-          git add .claude-plugin/marketplace.json
-          git diff --cached --quiet && exit 0
-          git commit -m "chore: bump sub-claude to ${{ steps.version.outputs.version }} [skip ci]"
-          git push origin main
+  release:
+    uses: EliasSchlie/claude-plugins/.github/workflows/plugin-release.yml@main
+    with:
+      plugin-name: sub-claude
+    secrets:
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

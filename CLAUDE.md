@@ -44,7 +44,7 @@ Plugin version lives in `.claude-plugin/plugin.json`. On every push to `main`, G
 - New features → bump minor (e.g. `0.1.0` → `0.2.0`)
 - The CI will then increment from *your* number (e.g. `0.2.0` → `0.2.1` on next push)
 
-**Required secret**: `MARKETPLACE_PAT` — a GitHub PAT with repo access to `EliasSchlie/claude-plugins`.
+**Required secrets**: `APP_ID` and `APP_PRIVATE_KEY` — from the "Plugin Release Bot" GitHub App (installed on `sub-claude` + `claude-plugins`).
 
 **Auto-update for users**: Run `/plugin` → Marketplaces → enable auto-update for `elias-tools` (one-time).
 

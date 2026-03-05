@@ -4,18 +4,23 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-
 jobs:
   bump-and-publish:
     runs-on: ubuntu-latest
     # Skip version-bump commits to avoid infinite loop
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
     steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: sub-claude,claude-plugins
+
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.MARKETPLACE_PAT }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Bump patch version
         id: version
@@ -38,7 +43,7 @@ jobs:
 
       - name: Update marketplace repo
         run: |
-          git clone https://x-access-token:${{ secrets.MARKETPLACE_PAT }}@github.com/EliasSchlie/claude-plugins.git /tmp/marketplace
+          git clone https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/EliasSchlie/claude-plugins.git /tmp/marketplace
           cd /tmp/marketplace
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -48,5 +53,5 @@ jobs:
             && mv tmp.json .claude-plugin/marketplace.json
           git add .claude-plugin/marketplace.json
           git diff --cached --quiet && exit 0
-          git commit -m "chore: bump sub-claude to ${{ steps.version.outputs.version }}"
+          git commit -m "chore: bump sub-claude to ${{ steps.version.outputs.version }} [skip ci]"
           git push origin main

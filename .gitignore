@@ -8,3 +8,6 @@
 
 # Test artifacts
 /tmp/
+
+# Worktrees
+.wt/

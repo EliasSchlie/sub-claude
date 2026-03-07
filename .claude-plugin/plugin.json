@@ -1,7 +1,7 @@
 {
   "name": "sub-claude",
   "description": "Session-oriented pool of persistent Claude TUI slots backed by tmux",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "author": {
     "name": "Elias Schlie"
   },

@@ -1,11 +1,23 @@
 # sub-claude
 
-A **session-oriented pool** of persistent Claude TUI slots backed by tmux. Solves a fundamental problem: launching a new `claude` process while another Claude session has a Bash tool call in flight silently destroys that call's output. sub-claude pre-starts sessions and reuses them — `start`, `followup`, and `wait` never launch new `claude` processes.
+A **session-oriented pool** of persistent Claude Code sessions backed by tmux.
+
+## The Problem
+
+Running a `claude` command while another Claude session has a Bash tool call in flight **silently destroys that call's output**. This is a fundamental Claude Code limitation — the transcript-directory file watcher reacts to new sessions, breaking active ones. You can't reliably run parallel Claude work by spawning new `claude` processes.
+
+## The Solution
+
+sub-claude **pre-starts** Claude TUI sessions in tmux panes before any work begins. New conversations use `/clear`, session switches use `/resume` — all typed into existing sessions, no new processes ever launched.
+
+The result: reliable parallel Claude work with fire-and-forget, blocking, and multi-turn patterns.
 
 ## Quick Start
 
 ```bash
-# Install
+# Install CLI
+git clone https://github.com/EliasSchlie/sub-claude.git
+cd sub-claude
 ./install.sh
 
 # Initialize a pool (5 slots by default)
@@ -17,35 +29,35 @@ id=$(sub-claude start "refactor auth module")
 # Blocking — wait for result
 result=$(sub-claude -v response start "summarize this file" --block)
 
-# Multi-turn
+# Multi-turn conversation
 id=$(sub-claude start "analyze the codebase")
 sub-claude wait "$id"
 sub-claude followup "$id" "now suggest improvements" --block
 
-# Parallel work
+# Parallel fan-out
 id1=$(sub-claude start "task one")
 id2=$(sub-claude start "task two")
-sub-claude wait  # waits for first child to finish
-sub-claude wait  # waits for the next one
+sub-claude wait  # waits for first to finish
+sub-claude wait  # waits for the next
 ```
 
 ## Installation
 
 ### Claude Code Plugin (recommended)
 
-Installs the skill and hooks — Claude learns how to use sub-claude automatically.
+The plugin teaches Claude how to use sub-claude automatically via skills and hooks.
 
 ```bash
 # Per-session (development/testing):
 claude --plugin-dir /path/to/sub-claude
 
-# Persistent (once a marketplace is published):
+# Persistent (via marketplace):
 # Inside Claude Code, run:
 #   /plugin marketplace add EliasSchlie/claude-plugins
 #   /plugin install sub-claude@elias-tools
 ```
 
-### CLI
+### CLI Binary
 
 The plugin handles Claude Code integration. The CLI binary needs a separate install:
 
@@ -54,10 +66,10 @@ git clone https://github.com/EliasSchlie/sub-claude.git
 cd sub-claude
 ./install.sh          # copies to ~/.local/{bin,lib}
 # or
-./install.sh --link   # symlinks binary (updates via git pull, no reinstall)
+./install.sh --link   # symlinks binary — updates via git pull, no reinstall
 ```
 
-Use `--prefix /usr/local` for system-wide install. With `--link`, the binary symlinks to the repo and resolves its lib dir automatically — `git pull` is all you need to update.
+Use `--prefix /usr/local` for system-wide install.
 
 ### Prerequisites
 
@@ -66,37 +78,85 @@ Use `--prefix /usr/local` for system-wide install. With `--link`, the binary sym
 - **jq**
 - **claude** CLI (installed and authenticated)
 
+## Architecture
+
+```
+         Caller A              Caller B
+            |                       |
+      start "prompt"        followup $id "prompt"
+            |                       |
+            v                       v
+    +------------------------------------------+
+    |          sub-claude orchestrator          |
+    |                                          |
+    |  Queue (FIFO): [job-3, job-4, ...]       |
+    |                                          |
+    |  Session mapping:                        |
+    |    ID a1b2c3d4 -> slot-0 (busy)          |
+    |    ID e5f6a7b8 -> slot-1 (idle)          |
+    |    ID c9d0e1f2 -> offloaded (snapshot)   |
+    +-------------------+----------------------+
+                        |
+        +---------------+---------------+
+        v                               v
+Background watcher            Shared tmux server
+(polls every 2s)              +-- slot-0  (busy)
+- done detection              +-- slot-1  (idle)
+- queue dispatch              +-- slot-2  (fresh)
+- crash recovery              +-- slot-3  (fresh)
+- pin expiry                  +-- slot-4  (fresh)
+```
+
+**Key concepts:**
+
+- **Pool** — pre-started Claude TUI sessions in tmux panes, scoped per project
+- **Slots** — individual tmux panes running persistent Claude sessions
+- **Job IDs** — 8-char hex identifiers for tracking work across slots
+- **Offloading** — idle sessions are snapshot-saved and their slots reused when all are busy
+- **Queue** — excess work is queued FIFO and dispatched as slots free up
+- **Watcher** — background process that monitors slots, dispatches jobs, and handles crash recovery
+
 ## CLI Reference
 
 ```
-sub-claude [-v response|conversation|full|raw] <command> [args]
+sub-claude [-v response|conversation|full|raw] [-C <dir>] <command> [args]
 
 # Session commands
-sub-claude start "prompt" [--block]
-sub-claude followup <id> "prompt" [--block]
-sub-claude input <id> "text"
-sub-claude key <id> Escape|Enter|Up|...
-sub-claude capture <id>
-sub-claude result <id>
-sub-claude wait [<id>] [--quiet]
-sub-claude pin <id> [duration]
-sub-claude unpin <id>
-sub-claude status <id>
-sub-claude list [--tree | --all]
-sub-claude stop <id> | --tree | --all
-sub-claude cancel <id>
-sub-claude clean <id> [--force | --force-all]
+sub-claude start "prompt" [--block]          # start a new job
+sub-claude followup <id> "prompt" [--block]  # continue a conversation
+sub-claude input <id> "text"                 # send raw text input
+sub-claude key <id> Escape|Enter|Up|...      # send a keypress
+sub-claude capture <id>                      # capture current terminal output
+sub-claude result <id>                       # get the job result
+sub-claude wait [<id>] [--quiet]             # wait for completion
+sub-claude pin <id> [duration]               # prevent offloading
+sub-claude unpin <id>                        # allow offloading again
+sub-claude status <id>                       # check job status
+sub-claude list [--tree | --all]             # list jobs
+sub-claude stop <id> | --tree | --all        # stop jobs
+sub-claude cancel <id>                       # cancel a queued job
+sub-claude clean <id> [--force | --force-all]  # clean up finished jobs
 
 # Pool management
-sub-claude pool init [--size N]
-sub-claude pool stop
-sub-claude pool status
-sub-claude pool resize N
+sub-claude pool init [--size N]              # initialize pool (default: 5 slots)
+sub-claude pool stop                         # stop the pool
+sub-claude pool status                       # show pool health
+sub-claude pool resize N                     # change pool size
+sub-claude pool list                         # list all pools across projects
+sub-claude pool destroy <hash> | --all       # tear down pools
+
+# Custom commands
+sub-claude run <name> [args...]              # run a custom command script
+sub-claude run --list                        # list available commands
 
 # Debug
-sub-claude attach <id>
-sub-claude uuid <id>
+sub-claude attach <id>                       # attach to a job's tmux pane
+sub-claude uuid <id>                         # show the Claude session UUID
 ```
+
+## Custom Commands
+
+Create reusable workflows as shell scripts in `~/.sub-claude/commands/` (global) or `.sub-claude/commands/` (project-local). See [docs/custom-commands.md](docs/custom-commands.md) for details and examples.
 
 ## Development
 
@@ -105,13 +165,13 @@ sub-claude uuid <id>
 ./dev.sh run pool status
 
 # Run tests
-./dev.sh test unit          # unit tests (fast, mocked)
+./dev.sh test unit          # unit tests (fast, mocked with bats)
 ./dev.sh test integration   # integration tests (real tmux, mock claude)
 ./dev.sh test live          # live tests (real Claude, burns tokens)
 ./dev.sh test all           # unit + integration
 ```
 
-### Test prerequisites
+### Test Prerequisites
 
 - [bats-core](https://github.com/bats-core/bats-core)
 - tmux, jq (for integration tests)
@@ -122,7 +182,8 @@ sub-claude uuid <id>
 - [Architecture](docs/architecture.md) — implementation spec, state machines, infrastructure
 - [Output](docs/output.md) — JSONL extraction, terminal capture, verbosity modes
 - [Usage Guide](docs/USAGE.md) — comprehensive CLI reference with examples
-- [Transcript Collision](docs/transcript-collision.md) — the problem sub-claude solves
+- [Custom Commands](docs/custom-commands.md) — reusable workflow scripts
+- [Transcript Collision](docs/transcript-collision.md) — the underlying problem sub-claude solves
 
 ## Uninstall
 
@@ -132,4 +193,4 @@ sub-claude uuid <id>
 
 ## License
 
-MIT
+[MIT](LICENSE)

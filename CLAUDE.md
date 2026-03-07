@@ -34,19 +34,12 @@ Test locally: `claude --plugin-dir .` (bypasses marketplace, loads from working 
 
 ## Versioning & Releases
 
-Plugin version lives in `.claude-plugin/plugin.json`. On every push to `main`, GitHub Actions automatically:
-
-1. Bumps the patch version (e.g. `0.1.5` → `0.1.6`)
-2. Pushes the new version to the marketplace repo (`EliasSchlie/claude-plugins`)
+Plugin version lives in `.claude-plugin/plugin.json`. On every push to `main`, GitHub Actions automatically bumps the patch version and publishes to the marketplace.
 
 **Manual version bumps** — for major/minor changes, bump the version in `plugin.json` yourself before pushing:
 - Breaking changes → bump major (e.g. `1.0.0` → `2.0.0`)
 - New features → bump minor (e.g. `0.1.0` → `0.2.0`)
 - The CI will then increment from *your* number (e.g. `0.2.0` → `0.2.1` on next push)
-
-**Required secrets**: `APP_ID` and `APP_PRIVATE_KEY` — from the "Plugin Release Bot" GitHub App (installed on `sub-claude` + `claude-plugins`).
-
-**Auto-update for users**: Run `/plugin` → Marketplaces → enable auto-update for `elias-tools` (one-time).
 
 ## Rules
 

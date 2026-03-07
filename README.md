@@ -4,11 +4,11 @@ A **session-oriented pool** of persistent Claude Code sessions backed by tmux.
 
 ## The Problem
 
-Running a `claude` command while another Claude session has a Bash tool call in flight **silently destroys that call's output**. This is a fundamental Claude Code limitation — the transcript-directory file watcher reacts to new sessions, breaking active ones. You can't reliably run parallel Claude work by spawning new `claude` processes.
+Running a `claude` command while another Claude session has a Bash tool call in flight **silently destroys that call's output**. This is a fundamental Claude Code limitation - the transcript-directory file watcher reacts to new sessions, breaking active ones. You can't reliably run parallel Claude work by spawning new `claude` processes.
 
 ## The Solution
 
-sub-claude **pre-starts** Claude TUI sessions in tmux panes before any work begins. New conversations use `/clear`, session switches use `/resume` — all typed into existing sessions, no new processes ever launched.
+sub-claude **pre-starts** Claude TUI sessions in tmux panes before any work begins. New conversations use `/clear`, session switches use `/resume` - all typed into existing sessions, no new processes ever launched.
 
 The result: reliable parallel Claude work with fire-and-forget, blocking, and multi-turn patterns.
 
@@ -26,7 +26,7 @@ sub-claude pool init
 # Fire-and-forget
 id=$(sub-claude start "refactor auth module")
 
-# Blocking — wait for result
+# Blocking - wait for result
 result=$(sub-claude -v response start "summarize this file" --block)
 
 # Multi-turn conversation
@@ -66,7 +66,7 @@ git clone https://github.com/EliasSchlie/sub-claude.git
 cd sub-claude
 ./install.sh          # copies to ~/.local/{bin,lib}
 # or
-./install.sh --link   # symlinks binary — updates via git pull, no reinstall
+./install.sh --link   # symlinks binary - updates via git pull, no reinstall
 ```
 
 Use `--prefix /usr/local` for system-wide install.
@@ -109,12 +109,12 @@ Background watcher            Shared tmux server
 
 **Key concepts:**
 
-- **Pool** — pre-started Claude TUI sessions in tmux panes, scoped per project
-- **Slots** — individual tmux panes running persistent Claude sessions
-- **Job IDs** — 8-char hex identifiers for tracking work across slots
-- **Offloading** — idle sessions are snapshot-saved and their slots reused when all are busy
-- **Queue** — excess work is queued FIFO and dispatched as slots free up
-- **Watcher** — background process that monitors slots, dispatches jobs, and handles crash recovery
+- **Pool** - pre-started Claude TUI sessions in tmux panes, scoped per project
+- **Slots** - individual tmux panes running persistent Claude sessions
+- **Job IDs** - 8-char hex identifiers for tracking work across slots
+- **Offloading** - idle sessions are snapshot-saved and their slots reused when all are busy
+- **Queue** - excess work is queued FIFO and dispatched as slots free up
+- **Watcher** - background process that monitors slots, dispatches jobs, and handles crash recovery
 
 ## CLI Reference
 
@@ -179,11 +179,11 @@ Create reusable workflows as shell scripts in `~/.sub-claude/commands/` (global)
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — implementation spec, state machines, infrastructure
-- [Output](docs/output.md) — JSONL extraction, terminal capture, verbosity modes
-- [Usage Guide](docs/USAGE.md) — comprehensive CLI reference with examples
-- [Custom Commands](docs/custom-commands.md) — reusable workflow scripts
-- [Transcript Collision](docs/transcript-collision.md) — the underlying problem sub-claude solves
+- [Architecture](docs/architecture.md) - implementation spec, state machines, infrastructure
+- [Output](docs/output.md) - JSONL extraction, terminal capture, verbosity modes
+- [Usage Guide](docs/USAGE.md) - comprehensive CLI reference with examples
+- [Custom Commands](docs/custom-commands.md) - reusable workflow scripts
+- [Transcript Collision](docs/transcript-collision.md) - the underlying problem sub-claude solves
 
 ## Uninstall
 

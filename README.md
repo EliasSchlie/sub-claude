@@ -122,37 +122,71 @@ Background watcher            Shared tmux server
 sub-claude [-v response|conversation|full|raw] [-C <dir>] <command> [args]
 
 # Session commands
-sub-claude start "prompt" [--block]          # start a new job
-sub-claude followup <id> "prompt" [--block]  # continue a conversation
-sub-claude input <id> "text"                 # send raw text input
-sub-claude key <id> Escape|Enter|Up|...      # send a keypress
-sub-claude capture <id>                      # capture current terminal output
-sub-claude result <id>                       # get the job result
-sub-claude wait [<id>] [--quiet]             # wait for completion
-sub-claude pin <id> [duration]               # prevent offloading
-sub-claude unpin <id>                        # allow offloading again
-sub-claude status <id>                       # check job status
-sub-claude list [--tree | --all]             # list jobs
-sub-claude stop <id> | --tree | --all        # stop jobs
-sub-claude cancel <id>                       # cancel a queued job
-sub-claude clean <id> [--force | --force-all]  # clean up finished jobs
+sub-claude start "prompt" [--block] [--timeout S]     # start a new job
+sub-claude followup <id> "prompt" [--block]           # continue a conversation
+sub-claude input <id> "text"                          # send raw text input
+sub-claude key <id> Escape|Enter|Up|...               # send a keypress
+sub-claude capture <id>                               # capture current terminal output
+sub-claude result <id>                                # get the job result
+sub-claude wait [<id>] [--quiet] [--timeout S]        # wait for completion
+sub-claude pin <id> [duration]                        # prevent offloading (default: 120s)
+sub-claude unpin <id>                                 # allow offloading again
+sub-claude status <id>                                # check job status
+sub-claude list [--tree | --all]                      # list jobs
+sub-claude stop <id> | --tree | --all                 # stop jobs
+sub-claude cancel <id>                                # cancel a queued job
+sub-claude clean <id> [--force | --force-all]         # clean up finished jobs
 
 # Pool management
-sub-claude pool init [--size N]              # initialize pool (default: 5 slots)
-sub-claude pool stop                         # stop the pool
-sub-claude pool status                       # show pool health
-sub-claude pool resize N                     # change pool size
-sub-claude pool list                         # list all pools across projects
-sub-claude pool destroy <hash> | --all       # tear down pools
+sub-claude pool init [--size N] [--idle-timeout S] [--ttl S] [--pressure-threshold N]
+sub-claude pool stop                                  # stop the pool
+sub-claude pool status                                # show pool health
+sub-claude pool resize N                              # change pool size
+sub-claude pool list                                  # list all pools across projects
+sub-claude pool destroy <hash> | --all                # tear down pools
 
 # Custom commands
-sub-claude run <name> [args...]              # run a custom command script
-sub-claude run --list                        # list available commands
+sub-claude run <name> [args...]                       # run a custom command script
+sub-claude run --list                                 # list available commands
 
 # Debug
-sub-claude attach <id>                       # attach to a job's tmux pane
-sub-claude uuid <id>                         # show the Claude session UUID
+sub-claude attach <id>                                # attach to a job's tmux pane
+sub-claude uuid <id>                                  # show the Claude session UUID
 ```
+
+### Output verbosity (`-v`)
+
+| Level | What you get |
+|-------|-------------|
+| `raw` | Unfiltered terminal capture (default) |
+| `response` | Final model answer only — stripped of prompts and TUI chrome |
+| `conversation` | All prompts + responses |
+| `full` | Everything except TUI chrome |
+
+Use `response` when scripting: `result=$(sub-claude -v response start "summarize file" --block)`
+
+Set a default: `export SUB_CLAUDE_VERBOSITY=response`
+
+### Pool init options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--size N` | 5 | Number of slots |
+| `--idle-timeout S` | — | Offload a session after N seconds idle |
+| `--ttl S` | — | Max lifetime per session before forced restart |
+| `--pressure-threshold N` | size/2 | Queued jobs needed before `--block` degrades to non-blocking |
+
+### Session lifecycle
+
+```
+queued → processing → finished(idle) → finished(offloaded)
+              └→ error
+```
+
+- **queued** — waiting for a free slot
+- **processing** — Claude is actively working
+- **finished(idle)** — done; slot still loaded, ready for `followup`
+- **finished(offloaded)** — slot was reclaimed; snapshot stored, auto-resumed on next `followup`
 
 ## Custom Commands
 
